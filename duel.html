@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Face-à-face — RED vs BLUE</title>
+<meta name="theme-color" content="#080a0e">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body.duel-body{background:#080a0e;color:#eef3f8;margin:0;min-height:100vh;font-family:var(--mono, monospace);}
+  .duel-wrap{max-width:1400px;margin:0 auto;padding:22px 20px 60px;}
+  .duel-back{color:var(--text-dim,#8a97ab);text-decoration:none;font-size:13px;}
+  .duel-back:hover{color:#eef3f8;}
+  .duel-title{font-size:22px;font-weight:700;letter-spacing:.5px;margin:8px 0 6px;}
+  .duel-title .r{color:var(--red,#ff3b5c);}
+  .duel-title .b{color:var(--blue,#22d3ee);}
+  .duel-intro{font-size:13.5px;color:#8a97ab;max-width:780px;line-height:1.55;margin-bottom:18px;}
+  .duel-controls{
+    display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#10141c;
+    border:1px solid #232b3a;border-radius:10px;padding:14px 16px;margin-bottom:20px;
+  }
+  .duel-controls select{background:#161c27;color:#eef3f8;border:1px solid #2a3548;border-radius:6px;padding:8px 10px;font:inherit;}
+  .duel-controls button{
+    background:linear-gradient(180deg,#ff5c78,#df1e42);color:#fff;border:none;border-radius:6px;
+    padding:9px 18px;font-weight:600;cursor:pointer;font:inherit;
+  }
+  .duel-controls button:disabled{opacity:.4;cursor:not-allowed;}
+  .duel-scenario-label{font-size:12.5px;color:#8a97ab;}
+  .duel-panes{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:900px){.duel-panes{grid-template-columns:1fr;}}
+  .duel-pane{
+    border-radius:12px;overflow:hidden;border:2px solid #232b3a;background:#0b0e13;
+    min-height:74vh;display:flex;flex-direction:column;
+  }
+  .duel-pane.side-red{border-color:#5a2230;}
+  .duel-pane.side-blue{border-color:#1c4a57;}
+  .duel-pane.winner{border-color:#3ddc84;box-shadow:0 0 0 2px #3ddc84 inset;}
+  .duel-pane-head{
+    padding:10px 14px;font-weight:700;font-size:12.5px;letter-spacing:.4px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .duel-pane.side-red .duel-pane-head{background:#1c0f13;color:#ff8ca0;}
+  .duel-pane.side-blue .duel-pane-head{background:#0f1a1c;color:#7fe0f2;}
+  .duel-pane-time{font-variant-numeric:tabular-nums;opacity:.85;}
+  .duel-pane iframe{flex:1;border:0;width:100%;background:#0b0e13;}
+  .duel-overlay{position:fixed;inset:0;background:rgba(6,8,11,.86);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .duel-overlay.hidden{display:none;}
+  .duel-countdown{font-size:88px;font-weight:800;color:#eef3f8;text-shadow:0 0 30px rgba(255,255,255,.25);}
+  .duel-result{background:#10141c;border:1px solid #2a3548;border-radius:14px;padding:32px 40px;text-align:center;max-width:480px;}
+  .duel-result h2{margin:0 0 12px;font-size:22px;}
+  .duel-result .times{display:flex;justify-content:center;gap:28px;margin:18px 0;font-size:13.5px;}
+  .duel-result .times .r{color:#ff8ca0;}
+  .duel-result .times .b{color:#7fe0f2;}
+  .duel-result button{
+    margin-top:8px;background:linear-gradient(180deg,#ff5c78,#df1e42);color:#fff;border:none;
+    border-radius:6px;padding:9px 20px;font-weight:600;cursor:pointer;font:inherit;
+  }
+</style>
+</head>
+<body class="duel-body">
+<div class="duel-wrap">
+  <a class="duel-back" href="index.html">← Retour à l'accueil</a>
+  <div class="duel-title"><span class="r">ROUGE</span> vs <span class="b">BLEU</span> — Face-à-face local</div>
+  <div class="duel-intro">
+    Deux joueurs, un seul écran : à gauche l'attaquant compromet le système, à droite le défenseur corrige
+    la <b>même</b> faille, en même temps. Premier terminé, premier servi. Ce mode est indépendant de votre
+    progression, de votre classement et du bac à sable — rien n'est sauvegardé ici.
+  </div>
+
+  <div class="duel-controls">
+    <label class="duel-scenario-label" for="duel-scn-select">Système :</label>
+    <select id="duel-scn-select"></select>
+    <button id="duel-start-btn">⚔️ Lancer le duel</button>
+    <span class="duel-scenario-label" id="duel-status"></span>
+  </div>
+
+  <div class="duel-panes">
+    <div class="duel-pane side-red" id="duel-pane-red">
+      <div class="duel-pane-head"><span>🔴 ROUGE — Attaque</span><span class="duel-pane-time" id="duel-time-red">--:--</span></div>
+      <iframe id="duel-iframe-red" title="Poste attaquant"></iframe>
+    </div>
+    <div class="duel-pane side-blue" id="duel-pane-blue">
+      <div class="duel-pane-head"><span>🔵 BLEU — Défense</span><span class="duel-pane-time" id="duel-time-blue">--:--</span></div>
+      <iframe id="duel-iframe-blue" title="Poste défenseur"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="duel-overlay hidden" id="duel-overlay"><div class="duel-countdown" id="duel-countdown">3</div></div>
+<div class="duel-overlay hidden" id="duel-result-overlay"><div class="duel-result" id="duel-result-body"></div></div>
+
+<script src="js/scenarios.js"></script>
+<script>
+(function(){
+  const select = document.getElementById('duel-scn-select');
+  select.innerHTML = '<option value="random">🎲 Système aléatoire</option>' +
+    SCENARIOS.map((s,i)=> `<option value="${i}">${escapeHtmlDuel(s.title)}</option>`).join('');
+
+  const startBtn = document.getElementById('duel-start-btn');
+  const statusEl = document.getElementById('duel-status');
+  const ifrRed = document.getElementById('duel-iframe-red');
+  const ifrBlue = document.getElementById('duel-iframe-blue');
+  const paneRed = document.getElementById('duel-pane-red');
+  const paneBlue = document.getElementById('duel-pane-blue');
+  const timeRed = document.getElementById('duel-time-red');
+  const timeBlue = document.getElementById('duel-time-blue');
+  const overlay = document.getElementById('duel-overlay');
+  const countdownEl = document.getElementById('duel-countdown');
+  const resultOverlay = document.getElementById('duel-result-overlay');
+  const resultBody = document.getElementById('duel-result-body');
+
+  let readyCount = 0;
+  let running = false;
+  let finished = false;
+  let tickHandle = null;
+  let startedAt = 0;
+  const results = {red:null, blue:null};
+
+  function fmt(sec){
+    sec = Math.max(0, sec);
+    const m = Math.floor(sec/60), s = Math.floor(sec%60);
+    return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  }
+
+  function escapeHtmlDuel(str){
+    return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function reset(){
+    running = false; finished = false; readyCount = 0;
+    results.red = null; results.blue = null;
+    paneRed.classList.remove('winner'); paneBlue.classList.remove('winner');
+    timeRed.textContent = '--:--'; timeBlue.textContent = '--:--';
+    resultOverlay.classList.add('hidden');
+    overlay.classList.add('hidden');
+    if(tickHandle) clearInterval(tickHandle);
+  }
+
+  startBtn.addEventListener('click', ()=>{
+    reset();
+    startBtn.disabled = true;
+    statusEl.textContent = 'Chargement des deux postes…';
+    const idx = select.value === 'random' ? Math.floor(Math.random()*SCENARIOS.length) : parseInt(select.value,10);
+    select.value = String(idx);
+    ifrRed.src = 'index.html?mode=duel&side=red&idx='+idx;
+    ifrBlue.src = 'index.html?mode=duel&side=blue&idx='+idx;
+  });
+
+  window.addEventListener('message', (e)=>{
+    const data = e.data;
+    if(!data || typeof data !== 'object') return;
+
+    if(data.type === 'duel-ready'){
+      readyCount++;
+      if(readyCount >= 2) beginCountdown();
+    } else if(data.type === 'duel-finish'){
+      if(results[data.side]) return; // déjà comptabilisé pour ce côté
+      results[data.side] = data;
+      if(!finished){
+        finished = true;
+        running = false;
+        clearInterval(tickHandle);
+        (data.side==='red' ? paneRed : paneBlue).classList.add('winner');
+        showResult(data.side);
+      } else {
+        updateResultTimes();
+      }
+    }
+  });
+
+  function beginCountdown(){
+    statusEl.textContent = '';
+    overlay.classList.remove('hidden');
+    let n = 3;
+    countdownEl.textContent = n;
+    const cd = setInterval(()=>{
+      n--;
+      if(n <= 0){
+        clearInterval(cd);
+        countdownEl.textContent = 'GO !';
+        setTimeout(()=>{ overlay.classList.add('hidden'); launch(); }, 500);
+      } else {
+        countdownEl.textContent = n;
+      }
+    }, 800);
+  }
+
+  function launch(){
+    running = true;
+    startedAt = Date.now();
+    ifrRed.contentWindow.postMessage({type:'duel-start'}, '*');
+    ifrBlue.contentWindow.postMessage({type:'duel-start'}, '*');
+    tickHandle = setInterval(()=>{
+      const el = (Date.now()-startedAt)/1000;
+      timeRed.textContent = fmt(el);
+      timeBlue.textContent = fmt(el);
+    }, 250);
+    startBtn.disabled = false;
+    startBtn.textContent = '⚔️ Relancer le duel';
+  }
+
+  function showResult(winnerSide){
+    const winnerLabel = winnerSide === 'red' ? '🔴 ROUGE (attaque)' : '🔵 BLEU (défense)';
+    const wData = results[winnerSide];
+    resultBody.innerHTML = `
+      <h2>${winnerLabel} l'emporte !</h2>
+      <div>Faille : « ${escapeHtmlDuel(wData.title)} » — résolue en ${fmt(wData.elapsedSec)}</div>
+      <div class="times">
+        <span class="r">Rouge : ${results.red ? fmt(results.red.elapsedSec) : 'en cours…'}</span>
+        <span class="b">Bleu : ${results.blue ? fmt(results.blue.elapsedSec) : 'en cours…'}</span>
+      </div>
+      <button id="duel-again-btn">Nouveau duel</button>
+    `;
+    resultOverlay.classList.remove('hidden');
+    document.getElementById('duel-again-btn').addEventListener('click', ()=>{
+      resultOverlay.classList.add('hidden');
+      startBtn.click();
+    });
+  }
+
+  function updateResultTimes(){
+    const rEl = resultBody.querySelector('.times .r');
+    const bEl = resultBody.querySelector('.times .b');
+    if(rEl) rEl.textContent = 'Rouge : ' + (results.red ? fmt(results.red.elapsedSec) : 'en cours…');
+    if(bEl) bEl.textContent = 'Bleu : ' + (results.blue ? fmt(results.blue.elapsedSec) : 'en cours…');
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RED vs BLUE — Simulateur Attaque / Défense</title>
+<meta name="theme-color" content="#080a0e">
+<meta name="description" content="Simulateur attaque/défense : compromettez un système simulé puis durcissez sa configuration pour empêcher l'attaque que vous venez de réaliser.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+<script>
+(function(){
+  try{
+    const t = localStorage.getItem('redvsblue_theme_v1') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<div id="boot-intro" class="boot-intro">
+  <pre id="boot-intro-text"></pre>
+</div>
+
+<div id="toast-root" class="toast-root"></div>
+
+<!-- ===================== ÉCRAN D'ACCUEIL ===================== -->
+<section id="screen-home" class="screen active">
+  <canvas id="network-canvas"></canvas>
+  <div class="home-scan"></div>
+  <div class="home-content">
+
+    <nav class="home-nav">
+      <button class="home-nav-brand" id="home-nav-brand" title="Retour à l'accueil">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" role="img" aria-label="Logo RED vs BLUE">
+          <defs>
+            <linearGradient id="bm-r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5c78"/><stop offset="1" stop-color="#df1e42"/></linearGradient>
+            <linearGradient id="bm-b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ae6f8"/><stop offset="1" stop-color="#10b3d1"/></linearGradient>
+          </defs>
+          <path d="M16 2 L28 9 L28 23 L16 30 L4 23 L4 9 Z" fill="#0b0e13" stroke="#2a3548" stroke-width="1.2"/>
+          <path d="M16 4.4 L6.1 10.1 V21.9 L16 27.6 Z" fill="url(#bm-r)"/>
+          <path d="M16 4.4 L25.9 10.1 V21.9 L16 27.6 Z" fill="url(#bm-b)"/>
+          <line x1="16" y1="4.4" x2="16" y2="27.6" stroke="#eef3f8" stroke-width="1.15" opacity=".92"/>
+        </svg>
+        <span class="r">RED</span><span class="nav-vs">vs</span><span class="b">BLUE</span>
+      </button>
+      <div class="home-nav-tabs" id="home-nav-tabs">
+        <button class="home-tab active" data-tab="accueil">Accueil</button>
+        <button class="home-tab" data-tab="dossiers">Dossiers</button>
+        <button class="home-tab" data-tab="chaines">Chaînes</button>
+        <button class="home-tab" data-tab="apprendre">Apprendre</button>
+        <button class="home-tab" data-tab="reseau">Réseau</button>
+        <button class="home-tab" data-tab="sandbox">Bac à sable</button>
+        <button class="home-tab" data-tab="jour">🗓️ Faille du jour</button>
+        <button class="home-tab" data-tab="succes">Succès</button>
+        <button class="home-tab" data-tab="bilan">Bilan</button>
+        <button class="home-tab" data-tab="classement">Classement</button>
+        <a class="home-tab" href="duel.html" id="home-tab-duel">⚔️ Duel</a>
+      </div>
+      <div class="theme-switch" id="theme-switch" role="group" aria-label="Choix du thème">
+        <button class="theme-btn" data-theme-choice="dark" title="Thème sombre (par défaut)">🌑</button>
+        <button class="theme-btn" data-theme-choice="light" title="Thème clair — façon rapport d'audit">🔆</button>
+        <button class="theme-btn" data-theme-choice="contrast" title="Contraste élevé">◐</button>
+      </div>
+      <button class="home-nav-sound" id="btn-sound-toggle-home" title="Activer/couper le son">🔇</button>
+    </nav>
+
+    <div class="tab-panels">
+
+      <!-- ===== Onglet : Accueil ===== -->
+      <section class="tab-panel active" data-panel="accueil">
+        <header class="hero">
+          <div class="boot-log" id="boot-log"></div>
+
+          <h1 class="glitch-title">
+            <span class="r">RED</span><span class="vs">vs</span><span class="b">BLUE</span>
+          </h1>
+          <div class="home-tagline">Simulateur pédagogique attaque / défense</div>
+
+          <div class="pipeline" id="pipeline">
+            <div class="pipe-track"></div>
+            <div class="pipe-dot" id="pipe-dot" style="left:6%"></div>
+            <div class="pipe-node" style="left:6%">
+              <div class="pipe-icon" id="pipe-icon-0">🖥</div>
+              <div class="pipe-label" id="pipe-label-0">Système simulé</div>
+            </div>
+            <div class="pipe-node" style="left:50%">
+              <div class="pipe-icon" id="pipe-icon-1">⚠</div>
+              <div class="pipe-label" id="pipe-label-1">Compromis</div>
+            </div>
+            <div class="pipe-node" style="left:94%">
+              <div class="pipe-icon" id="pipe-icon-2">✔</div>
+              <div class="pipe-label" id="pipe-label-2">Attaque bloquée</div>
+            </div>
+          </div>
+
+          <div class="home-progress">
+            <div class="label" id="home-progress-label">0 / 4 systèmes sécurisés</div>
+            <div class="bar"><div class="bar-fill" id="home-progress-fill" style="width:0%"></div></div>
+          </div>
+
+          <div class="home-actions">
+            <button class="big primary" id="btn-continue">▶ Continuer</button>
+            <button class="big secondary" id="btn-reset-all">↺ Réinitialiser la progression</button>
+          </div>
+        </header>
+      </section>
+
+      <!-- ===== Onglet : Dossiers ===== -->
+      <section class="tab-panel" data-panel="dossiers">
+        <h2 class="section-label">📁 Dossiers actifs</h2>
+        <div class="mission-grid" id="home-mission-grid"></div>
+      </section>
+
+      <!-- ===== Onglet : Chaînes (attaques multi-étapes) ===== -->
+      <section class="tab-panel" data-panel="chaines">
+        <h2 class="section-label">🔗 Chaînes d'attaque — enchaîne les failles jusqu'au root</h2>
+        <div class="learn-intro">Contrairement aux dossiers (une faille = un système), une chaîne enchaîne <b>plusieurs failles liées</b> dans une seule session : chaque étape réussie débloque la suivante, du premier accès jusqu'au <b>shell root complet</b>.</div>
+        <div class="chains-grid" id="chains-grid"></div>
+      </section>
+
+      <!-- ===== Onglet : Apprendre (mode cours) ===== -->
+      <section class="tab-panel" data-panel="apprendre">
+        <h2 class="section-label">🎓 Apprendre — comprendre chaque faille</h2>
+        <div class="learn-path" id="learn-path"></div>
+        <div class="learn-intro">Chaque leçon décortique une vulnérabilité : le <b>concept</b>, l'<b>attaque</b> expliquée pas à pas, puis la <b>défense</b> qui la neutralise. Lisez la théorie ici, puis passez à la pratique dans les dossiers — sans blocage, dans l'ordre que vous voulez.</div>
+        <div class="learn-grid" id="learn-grid"></div>
+      </section>
+
+      <!-- ===== Onglet : Réseau ===== -->
+      <section class="tab-panel" data-panel="reseau">
+        <h2 class="section-label">🕸️ Topologie du réseau cible</h2>
+        <div class="netmap-panel">
+          <div class="netmap-desc">Chaque nœud est un scénario, regroupé par famille technique autour de <code>target-lab</code>. Cliquez un nœud débloqué pour ouvrir directement son dossier.</div>
+          <div class="netmap-legend">
+            <span class="nl-item"><span class="nl-dot" style="--sc:var(--text-dim)"></span>Verrouillé</span>
+            <span class="nl-item"><span class="nl-dot open"></span>Non tenté</span>
+            <span class="nl-item"><span class="nl-dot progress"></span>Attaqué</span>
+            <span class="nl-item"><span class="nl-dot secured"></span>Sécurisé</span>
+          </div>
+          <div class="netmap-wrap">
+            <div class="netmap-host" id="network-map-host"></div>
+            <div class="netmap-info" id="netmap-info"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Bac à sable ===== -->
+      <section class="tab-panel" data-panel="sandbox">
+        <h2 class="section-label">🎲 Bac à sable</h2>
+        <div class="sandbox-panel">
+          <div class="sandbox-panel-desc">Un système et une faille tirés au hasard parmi tous les scénarios disponibles, sans script guidé — pour s'entraîner librement une fois les dossiers maîtrisés. N'affecte pas la progression du parcours.</div>
+          <div class="sandbox-stats" id="sandbox-stats"></div>
+          <button class="big primary" id="btn-sandbox">🎲 Lancer un défi aléatoire</button>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Faille du jour ===== -->
+      <section class="tab-panel" data-panel="jour">
+        <h2 class="section-label">🗓️ Faille du jour</h2>
+        <div class="daily-panel">
+          <div class="sandbox-panel-desc">Un même système tiré au sort chaque jour, identique pour tout le monde — une seule tentative compte pour la série, rejouable ensuite pour s'entraîner. N'affecte pas la progression du parcours.</div>
+          <div class="daily-card" id="daily-card"></div>
+          <div class="daily-stats" id="daily-stats"></div>
+          <button class="big primary" id="btn-daily">🗓️ Lancer la faille du jour</button>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Succès ===== -->
+      <section class="tab-panel" data-panel="succes">
+        <h2 class="section-label">🏅 Succès</h2>
+        <div class="achv-grid" id="achv-grid"></div>
+      </section>
+
+      <!-- ===== Onglet : Bilan (tableau de bord) ===== -->
+      <section class="tab-panel" data-panel="bilan">
+        <h2 class="section-label">📊 Bilan — ton profil de hacker</h2>
+        <div class="dash-stats" id="dash-stats"></div>
+        <div class="dash-main">
+          <div class="dash-radar-wrap">
+            <div class="dash-radar" id="dash-radar"></div>
+            <div class="dash-legend">
+              <span class="dl-item"><span class="dl-dot red"></span>Systèmes compromis</span>
+              <span class="dl-item"><span class="dl-dot blue"></span>Systèmes sécurisés</span>
+            </div>
+          </div>
+          <div class="dash-families" id="dash-families"></div>
+        </div>
+        <div class="dash-chains" id="dash-chains"></div>
+      </section>
+
+      <!-- ===== Onglet : Classement + rapport ===== -->
+      <section class="tab-panel" data-panel="classement">
+        <h2 class="section-label">📊 Classement local — score cumulé sur le parcours complet</h2>
+        <div class="leaderboard-panel">
+          <div id="leaderboard-list"></div>
+          <div class="leaderboard-actions">
+            <button class="ghost" id="btn-export-leaderboard">⇩ Exporter (JSON)</button>
+            <button class="ghost" id="btn-clear-leaderboard">🗑 Effacer le classement</button>
+          </div>
+        </div>
+
+        <h2 class="section-label" style="margin-top:34px;">📄 Rapport de session</h2>
+        <div class="report-panel">
+          <div class="report-panel-desc">Génère un compte-rendu Markdown de votre progression : failles compromises, correctifs appliqués, verdicts de <code>replay</code>, scores et succès débloqués. Pratique à joindre à une soutenance.</div>
+          <button class="big secondary" id="btn-session-report">📄 Générer le rapport (.md)</button>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="home-footer">target-lab // build local — aucune donnée ne quitte votre navigateur</div>
+  </div>
+</section>
+
+<!-- ===================== ÉCRAN DE BRIEFING ===================== -->
+<section id="screen-briefing" class="screen">
+  <div class="briefing-wrap">
+    <div class="briefing-card" id="briefing-card">
+      <div class="briefing-eyebrow" id="briefing-eyebrow"></div>
+      <h2 id="briefing-title"></h2>
+      <div class="who" id="briefing-who"></div>
+      <p class="desc" id="briefing-desc"></p>
+      <div class="briefing-actions">
+        <button class="big secondary" id="btn-briefing-back">← Retour au menu</button>
+        <button class="big primary" id="btn-briefing-launch">Lancer le terminal ▶</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ÉCRAN DE JEU ===================== -->
+<section id="screen-game" class="screen">
+  <div class="topbar">
+    <div class="brand" id="brand-home-link" title="Retour au menu">
+      <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" role="img" aria-label="Logo RED vs BLUE">
+        <defs>
+          <linearGradient id="bm-rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5c78"/><stop offset="1" stop-color="#df1e42"/></linearGradient>
+          <linearGradient id="bm-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ae6f8"/><stop offset="1" stop-color="#10b3d1"/></linearGradient>
+        </defs>
+        <path d="M16 2 L28 9 L28 23 L16 30 L4 23 L4 9 Z" fill="#0b0e13" stroke="#2a3548" stroke-width="1.2"/>
+        <path d="M16 4.4 L6.1 10.1 V21.9 L16 27.6 Z" fill="url(#bm-rg)"/>
+        <path d="M16 4.4 L25.9 10.1 V21.9 L16 27.6 Z" fill="url(#bm-bg)"/>
+        <line x1="16" y1="4.4" x2="16" y2="27.6" stroke="#eef3f8" stroke-width="1.15" opacity=".92"/>
+      </svg>
+      <h1><span class="r">RED</span><span class="nav-vs">vs</span><span class="b">BLUE</span></h1>
+    </div>
+    <span class="progress-tag" id="progress-tag"></span>
+    <div class="score-hud" id="score-hud">
+      <span id="hud-timer">⏱ 00:00</span>
+      <span id="hud-score">🧮 — pts</span>
+    </div>
+    <div class="phase-pill attack" id="phase-pill">PHASE ATTAQUE</div>
+    <button class="menu-btn" id="btn-sound-toggle" title="Activer/couper le son">🔇</button>
+    <button class="menu-btn" id="btn-menu">☰ Menu</button>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <h2>Scénarios</h2>
+      <div id="mission-list"></div>
+    </div>
+
+    <div class="main">
+      <div class="objective attack" id="objective-panel">
+        <h3 id="obj-title"></h3>
+        <div class="who" id="obj-who"></div>
+        <p id="obj-desc"></p>
+        <div class="obj-actions">
+          <button class="ghost" id="btn-hint">💡 Indice</button>
+          <button class="ghost" id="btn-guided">🧭 Mode guidé</button>
+          <button class="ghost" id="btn-reset-scn">↺ Réinitialiser ce scénario</button>
+        </div>
+        <div class="hints" id="hints-list"></div>
+        <div class="guided-panel" id="guided-panel"></div>
+        <div id="verdict-slot"></div>
+      </div>
+
+      <div class="term-wrap">
+        <div class="term-head">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span id="term-host">target-lab — terminal simulé</span>
+        </div>
+        <div class="term-body" id="term-body"></div>
+        <div class="term-input-row">
+          <span class="prompt-label attack" id="prompt-label">bob@target:~$</span>
+          <input id="term-input" autocomplete="off" spellcheck="false" placeholder="tapez 'help' pour la liste des commandes"/>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="modal-root"></div>
+
+<script src="js/scenarios.js"></script>
+<script src="js/chains.js"></script>
+<script src="js/progression.js"></script>
+<script src="js/network-map.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/hero-fx.js"></script>
+<script src="js/main.js"></script>
+<script src="js/duel.js"></script>
+</body>
+</html>
