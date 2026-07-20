@@ -126,12 +126,18 @@ Le refactoring conserve un principe strict de non-régression : les règles d'ex
 - *Non fait (extension future possible) : mini classement partagé du jour, qui nécessiterait un backend léger.*
 
 ### v1.3 — Replay cinématique exportable 🟢
-- À la fin d'un scénario, génération d'un résumé animé (timeline des commandes tapées)
-- Exportable en GIF ou courte vidéo, pratique à montrer en soutenance
+**Statut : fait**
+- Chaque ligne affichée dans le terminal (`print()`) est désormais aussi enregistrée dans `game.transcript` ; la modale de fin de phase propose un bouton **🎬 Revoir la session** dès qu'il y a de quoi rejouer — couvre attaque, défense, bac à sable, duel, faille du jour et chaînes en un seul point d'intégration
+- Nouvel écran **Récap** : lecture animée ligne par ligne (effet machine à écrire), lecture/pause, retour au début, vitesse ×1/×2/×4, curseur de progression pour naviguer directement dans la session
+- Export en fichier **HTML autonome** (`⇩ Télécharger (.html)`) : aucune dépendance externe ni encodage GIF/vidéo (hors contrainte "zéro dépendance" du projet), mais un fichier qui se rejoue tout seul dans n'importe quel navigateur, pratique à joindre à une soutenance ou à partager
 
 ### v2.0 — Génération procédurale & éditeur de CTF 🟢
-- Scénarios générés automatiquement (permutation de failles, de noms d'hôtes, de chemins)
-- Éditeur permettant à un professeur ou un étudiant de créer son propre scénario attaque/défense sans toucher au code
+**Statut : fait**
+- Nouvel onglet **🧬 Généré** : scénarios construits à la volée par permutation de 2 modèles paramétrés (secret exposé par des permissions trop larges, binaire SUID oublié) — entreprise, compte de service, chemin de fichier et jeton de drapeau tirés au hasard à chaque partie, donc jamais deux fois le même système
+- Nouvel onglet **🛠️ Éditeur** : un professeur ou un étudiant construit son propre système fichier par fichier (chemin, type, permission, propriétaire, contenu), définit un objectif attaque (« trouver un drapeau ») et un objectif défense (« corriger une permission »), sans écrire une ligne de code
+- Scénarios personnalisés sauvegardés en `localStorage`, exportables/importables en JSON pour être partagés entre navigateurs (utile en classe, sans backend)
+- Techniquement : `buildVfsFromEntries()` (utilitaire partagé) construit une arborescence complète à partir d'une liste plate de fichiers ; `applyScenarioState()` a été extrait de `startPhase()` pour être réutilisé par les modes généré/éditeur ; `checkAutoWin()` a gagné deux branches dédiées (`game.procedural` / `game.custom`), isolées de la progression principale sur le même modèle que le bac à sable, la faille du jour et le duel
+- *Non fait (limite assumée) : la génération procédurale se limite à 2 modèles paramétrés plutôt qu'une synthèse ouverte d'exploits ; l'éditeur ne couvre que les failles de type « fuite d'information » et « permission à corriger », pas les binaires SUID ou les chaînes multi-étapes personnalisées.*
 
 ---
 
@@ -144,4 +150,4 @@ Le refactoring conserve un principe strict de non-régression : les règles d'ex
 
 ---
 
-*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé) et v1.2 (faille du jour avec série façon Wordle), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants.*
+*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé), v1.2 (faille du jour avec série façon Wordle), v1.3 (récap cinématique + export HTML autonome) et v2.0 (génération procédurale à 2 modèles + éditeur de scénario sans code), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants. La roadmap initiale est désormais entièrement implémentée ; les idées non planifiées ci-dessous restent ouvertes pour une future session.*

@@ -49,11 +49,31 @@ let game = {
   host: 'target-lab',    // v1.0 : hôte courant (utile pour les chaînes multi-machines)
   hosts: null,           // v1.0 : {hostname: vfs} pour une chaîne à plusieurs machines, sinon null
   daily: false,          // v1.2 : mode faille du jour (hors progression principale)
-  dailyDone: false
+  dailyDone: false,
+  transcript: [],        // v1.3 : historique complet des lignes affichées, pour le récap cinématique
+  procedural: false,     // v2.0 : mode scénario généré procéduralement
+  proceduralDone: false,
+  proceduralScenario: null,
+  custom: false,         // v2.0 : mode scénario créé via l'éditeur (test en direct)
+  customDone: false,
+  customScenario: null
 };
+
+/* Remet à zéro tous les indicateurs de "mode" (bac à sable, faille du jour,
+   duel, généré procéduralement, éditeur) avant d'en activer un seul.
+   v0.7/v0.9/v1.2/v2.0 partagent ce point d'entrée commun. */
+function resetModeFlags(){
+  game.sandbox = false;
+  game.daily = false;
+  game.duel = null;
+  game.procedural = false;
+  game.custom = false;
+}
 
 function currentScenario(){
   if(game.chain) return game.chainView;
+  if(game.procedural) return game.proceduralScenario;
+  if(game.custom) return game.customScenario;
   return SCENARIOS[game.scenarioIndex];
 }
 
@@ -74,21 +94,22 @@ function findFirstAvailable(){
   return {index: SCENARIOS.length-1, phase:'defense'};
 }
 
-function startPhase(scenarioIndex, phase){
-  const scn = SCENARIOS[scenarioIndex];
+function applyScenarioState(scn, phase){
   game.chain = null; game.chainView = null; game.chainDone = false;
   game.host = 'target-lab';
   game.hosts = null;
-  game.scenarioIndex = scenarioIndex;
   game.phase = phase;
   game.vfs = scn.makeVfs();
   game.flags = {};
   game.hintIndex = 0;
   game.history = [];
+  game.transcript = [];
   game.phaseStartTime = Date.now();
   game.sandboxWon = false;
   game.duelDone = false;
   game.dailyDone = false;
+  game.proceduralDone = false;
+  game.customDone = false;
   if(phase === 'attack'){
     game.user = scn.startUserAttack;
     game.cwd = scn.startCwdAttack;
@@ -108,6 +129,14 @@ function startPhase(scenarioIndex, phase){
   renderAll();
   clearTerminal();
   printWelcome();
+}
+
+function startPhase(scenarioIndex, phase){
+  const scn = SCENARIOS[scenarioIndex];
+  game.scenarioIndex = scenarioIndex;
+  game.procedural = false;
+  game.custom = false;
+  applyScenarioState(scn, phase);
 }
 
 /* ---------- Scénarios chaînés (attaque multi-étapes) ---------- */
@@ -144,6 +173,7 @@ function startChain(chainIndex){
   game.flags = {};
   game.hintIndex = 0;
   game.history = [];
+  game.transcript = [];
   game.phaseStartTime = Date.now();
   game.user = chain.startUser;
   game.cwd = chain.startCwd;
@@ -275,6 +305,10 @@ function checkAutoWin(){
       if(!game.duelDone){ game.duelDone = true; completeDuelAttack(); }
     } else if(game.daily){
       if(!game.dailyDone){ game.dailyDone = true; completeDailyChallenge(); }
+    } else if(game.procedural){
+      if(!game.proceduralDone){ game.proceduralDone = true; completeProceduralAttack(); }
+    } else if(game.custom){
+      if(!game.customDone){ game.customDone = true; completeCustomAttack(); }
     } else if(game.sandbox){
       if(!game.sandboxWon){ game.sandboxWon = true; completeSandboxAttack(); }
     } else if(!progress[scn.id].attack){
@@ -284,6 +318,10 @@ function checkAutoWin(){
     if(!scn.defenseCheck(game)) return;
     if(game.duel){
       if(!game.duelDone){ game.duelDone = true; completeDuelDefense(); }
+    } else if(game.procedural){
+      if(!game.proceduralDone){ game.proceduralDone = true; completeProceduralDefense(); }
+    } else if(game.custom){
+      if(!game.customDone){ game.customDone = true; completeCustomDefense(); }
     } else {
       showDefenseReadyBanner();
     }

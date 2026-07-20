@@ -55,6 +55,8 @@
         <button class="home-tab" data-tab="reseau">Réseau</button>
         <button class="home-tab" data-tab="sandbox">Bac à sable</button>
         <button class="home-tab" data-tab="jour">🗓️ Faille du jour</button>
+        <button class="home-tab" data-tab="genere">🧬 Généré</button>
+        <button class="home-tab" data-tab="editeur">🛠️ Éditeur</button>
         <button class="home-tab" data-tab="succes">Succès</button>
         <button class="home-tab" data-tab="bilan">Bilan</button>
         <button class="home-tab" data-tab="classement">Classement</button>
@@ -166,6 +168,69 @@
           <div class="daily-card" id="daily-card"></div>
           <div class="daily-stats" id="daily-stats"></div>
           <button class="big primary" id="btn-daily">🗓️ Lancer la faille du jour</button>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Généré procéduralement (v2.0) ===== -->
+      <section class="tab-panel" data-panel="genere">
+        <h2 class="section-label">🧬 Scénario généré</h2>
+        <div class="sandbox-panel">
+          <div class="sandbox-panel-desc">Un système inédit généré à la volée : faille tirée parmi plusieurs modèles (secret exposé par des permissions trop larges, binaire SUID oublié…), avec entreprise, comptes, chemins et drapeau randomisés à chaque partie. N'affecte pas la progression du parcours.</div>
+          <button class="big primary" id="btn-procedural">🧬 Générer un nouveau système</button>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Éditeur de scénario (v2.0) ===== -->
+      <section class="tab-panel" data-panel="editeur">
+        <h2 class="section-label">🛠️ Éditeur de scénario</h2>
+        <div class="editor-panel">
+          <div class="sandbox-panel-desc">Créez votre propre système sans toucher au code : décrivez les fichiers, un secret à trouver (objectif attaque) et une permission à corriger (objectif défense). Sauvegardé dans votre navigateur, exportable/importable en JSON pour le partager.</div>
+
+          <form id="editor-form" class="editor-form">
+            <label class="editor-label">Titre du scénario
+              <input type="text" id="ed-title" placeholder="ex. Le partage réseau oublié" required>
+            </label>
+            <label class="editor-label">Briefing (contexte affiché au joueur)
+              <textarea id="ed-intro" rows="2" placeholder="Décrivez la situation et l'objectif…" required></textarea>
+            </label>
+
+            <div class="editor-section-title">Système de fichiers</div>
+            <div id="editor-files"></div>
+            <button type="button" class="editor-add-btn" id="ed-add-file">+ Ajouter un fichier/dossier</button>
+
+            <div class="editor-section-title">Objectif attaque</div>
+            <div class="editor-row">
+              <label class="editor-label editor-label-inline">Chemin du drapeau
+                <input type="text" id="ed-flag-path" placeholder="/home/user/flag.txt" required>
+              </label>
+              <label class="editor-label editor-label-inline">Contenu du drapeau
+                <input type="text" id="ed-flag-content" placeholder="FLAG{mon_drapeau}" required>
+              </label>
+            </div>
+            <div class="sandbox-panel-desc">Le drapeau doit aussi apparaître comme fichier ci-dessus (même chemin) pour être lisible en jeu.</div>
+
+            <div class="editor-section-title">Objectif défense</div>
+            <div class="editor-row">
+              <label class="editor-label editor-label-inline">Chemin à corriger
+                <input type="text" id="ed-fix-path" placeholder="/var/backups/config.bak" required>
+              </label>
+              <label class="editor-label editor-label-inline">Permission cible
+                <input type="text" id="ed-fix-perm" placeholder="600" required>
+              </label>
+            </div>
+
+            <button type="submit" class="big primary" id="ed-save-btn">💾 Enregistrer ce scénario</button>
+          </form>
+
+          <div class="editor-io-row">
+            <button class="editor-io-btn" id="ed-export-btn">⇩ Exporter (JSON)</button>
+            <label class="editor-io-btn editor-io-label">⇧ Importer (JSON)
+              <input type="file" id="ed-import-input" accept="application/json" hidden>
+            </label>
+          </div>
+
+          <div class="editor-section-title">Mes scénarios</div>
+          <div class="editor-list" id="editor-list"></div>
         </div>
       </section>
 
@@ -294,6 +359,37 @@
   </div>
 </section>
 
+<!-- ===================== ÉCRAN DE RÉCAP CINÉMATIQUE (v1.3) ===================== -->
+<section id="screen-recap" class="screen">
+  <div class="recap-wrap">
+    <div class="recap-top">
+      <button class="ghost" id="btn-recap-back">← Retour</button>
+      <div class="recap-title" id="recap-title">Récap de session</div>
+      <div class="recap-controls">
+        <button class="menu-btn" id="btn-recap-restart" title="Revoir depuis le début">⟲</button>
+        <button class="menu-btn" id="btn-recap-playpause" title="Lecture / pause">⏸</button>
+        <select id="recap-speed" title="Vitesse de lecture">
+          <option value="1">1×</option>
+          <option value="2" selected>2×</option>
+          <option value="4">4×</option>
+        </select>
+        <button class="big secondary" id="btn-recap-download">⇩ Télécharger (.html)</button>
+      </div>
+    </div>
+    <div class="term-wrap recap-term">
+      <div class="term-head">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span id="recap-host">target-lab — session enregistrée</span>
+      </div>
+      <div class="term-body" id="recap-body"></div>
+    </div>
+    <div class="recap-progress-row">
+      <input type="range" id="recap-scrubber" min="0" max="100" value="0">
+      <span class="recap-progress-label" id="recap-progress-label">0 / 0</span>
+    </div>
+  </div>
+</section>
+
 <div id="modal-root"></div>
 
 <script src="js/scenarios.js"></script>
@@ -305,5 +401,8 @@
 <script src="js/hero-fx.js"></script>
 <script src="js/main.js"></script>
 <script src="js/duel.js"></script>
+<script src="js/recap.js"></script>
+<script src="js/procedural.js"></script>
+<script src="js/editor.js"></script>
 </body>
 </html>

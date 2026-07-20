@@ -58,6 +58,7 @@ document.getElementById('guided-panel').addEventListener('click', (e)=>{
 /* ---------- v0.7 : bac à sable ---------- */
 document.getElementById('btn-sandbox').addEventListener('click', ()=> startSandboxChallenge());
 document.getElementById('btn-daily').addEventListener('click', ()=> startDailyChallenge());
+document.getElementById('btn-procedural').addEventListener('click', ()=> startProceduralChallenge());
 
 /* ---------- v0.5 : rapport de session ---------- */
 document.getElementById('btn-session-report').addEventListener('click', downloadSessionReport);

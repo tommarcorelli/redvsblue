@@ -1003,3 +1003,85 @@ html[data-theme="contrast"] body::before{ display:none; }
 html[data-theme="contrast"] button:focus-visible,
 html[data-theme="contrast"] .home-tab:focus-visible,
 html[data-theme="contrast"] input:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+
+/* ============================================================
+   v1.3 — Récap cinématique de session
+   ============================================================ */
+#screen-recap{padding:20px 22px 30px;}
+.recap-wrap{max-width:900px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px;flex:1;}
+.recap-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.recap-title{font-size:16px;font-weight:700;flex:1;min-width:0;}
+.recap-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.recap-controls select{
+  background:var(--bg-panel);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:6px 8px;font-family:var(--mono);font-size:12.5px;
+}
+.recap-term{flex:1;min-height:420px;}
+.recap-progress-row{display:flex;align-items:center;gap:12px;}
+.recap-progress-row input[type=range]{flex:1;accent-color:var(--gold);}
+.recap-progress-label{font-size:12px;color:var(--text-dim);white-space:nowrap;}
+
+/* ============================================================
+   v2.0 — Éditeur de scénario personnalisé
+   ============================================================ */
+.editor-panel{display:flex;flex-direction:column;gap:14px;max-width:820px;}
+.editor-form{
+  display:flex;flex-direction:column;gap:12px;background:var(--bg-panel);
+  border:1px solid var(--line);border-radius:10px;padding:18px;
+}
+.editor-label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--text-dim);}
+.editor-label-inline{flex:1;min-width:200px;}
+.editor-row{display:flex;gap:12px;flex-wrap:wrap;}
+.editor-label input, .editor-label textarea, .editor-label select{
+  font-family:var(--mono);font-size:13px;background:var(--bg-panel-2);color:var(--text);
+  border:1px solid var(--line);border-radius:6px;padding:8px 10px;resize:vertical;
+}
+.editor-section-title{
+  font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);
+  margin-top:6px;padding-top:10px;border-top:1px dashed var(--line);
+}
+.editor-file-row{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;background:var(--bg-panel-2);
+  border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;
+}
+.editor-file-row input, .editor-file-row select{
+  font-family:var(--mono);font-size:12.5px;background:var(--bg-panel);color:var(--text);
+  border:1px solid var(--line);border-radius:5px;padding:6px 8px;
+}
+.editor-file-row .ef-path{flex:2;min-width:160px;}
+.editor-file-row .ef-type{flex:0 0 80px;}
+.editor-file-row .ef-perm{flex:0 0 70px;}
+.editor-file-row .ef-owner{flex:0 0 100px;}
+.editor-file-row .ef-content{flex:3;min-width:180px;}
+.editor-file-row .ef-remove{
+  flex-shrink:0;background:transparent;border:1px solid var(--line);color:var(--red);
+  border-radius:5px;padding:6px 10px;cursor:pointer;
+}
+.editor-file-row .ef-remove:hover{background:var(--red-dim);}
+.editor-add-btn{
+  align-self:flex-start;background:transparent;border:1px dashed var(--line);color:var(--text-dim);
+  border-radius:6px;padding:7px 14px;font-size:12.5px;cursor:pointer;font-family:var(--mono);
+}
+.editor-add-btn:hover{border-color:var(--blue);color:var(--blue);}
+.editor-io-row{display:flex;gap:10px;}
+.editor-io-btn{
+  font-family:var(--mono);font-size:12.5px;background:var(--bg-panel);border:1px solid var(--line);
+  color:var(--text-dim);border-radius:6px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+}
+.editor-io-btn:hover{border-color:var(--gold);color:var(--gold);}
+.editor-list{display:flex;flex-direction:column;gap:10px;}
+.editor-card{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--bg-panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;
+}
+.editor-card-title{font-size:13.5px;font-weight:600;}
+.editor-card-desc{font-size:12px;color:var(--text-dim);max-width:420px;}
+.editor-card-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.editor-card-actions button{
+  font-family:var(--mono);font-size:12px;border-radius:6px;padding:6px 12px;cursor:pointer;border:1px solid var(--line);
+  background:transparent;color:var(--text-dim);
+}
+.editor-card-actions .ec-attack:hover{border-color:var(--red);color:var(--red);}
+.editor-card-actions .ec-defense:hover{border-color:var(--blue);color:var(--blue);}
+.editor-card-actions .ec-delete:hover{border-color:var(--red);color:var(--red);background:var(--red-dim);}
+.editor-empty{font-size:12.5px;color:var(--text-dim);font-style:italic;}

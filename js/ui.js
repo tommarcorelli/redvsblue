@@ -272,6 +272,14 @@ function renderTopbar(){
     phasePill.className = 'phase-pill sandbox';
     const stats = loadSandboxStats();
     progressTag.textContent = `${stats.solved} défi(s) résolu(s)` + (stats.bestTimeMs!==null ? ` — record ${formatDuration(stats.bestTimeMs/1000)}` : '');
+  } else if(game.procedural){
+    phasePill.textContent = '🧬 SCÉNARIO GÉNÉRÉ';
+    phasePill.className = 'phase-pill sandbox';
+    progressTag.textContent = game.proceduralScenario ? game.proceduralScenario.category : '';
+  } else if(game.custom){
+    phasePill.textContent = '🛠️ SCÉNARIO ÉDITEUR';
+    phasePill.className = 'phase-pill sandbox';
+    progressTag.textContent = game.customScenario ? game.customScenario.title : '';
   } else {
     phasePill.textContent = game.phase==='attack' ? 'PHASE ATTAQUE' : 'PHASE DÉFENSE';
     phasePill.className = 'phase-pill ' + game.phase;
@@ -329,6 +337,7 @@ function print(text, cls){
   termBody.appendChild(div);
   termBody.scrollTop = termBody.scrollHeight;
   if(cls === 'err') playSound('error');
+  if(game.transcript) game.transcript.push({text, cls: cls||'out', t: Date.now()});
 }
 function printPromptEcho(cmd){
   const label = promptLabel.textContent;
@@ -391,6 +400,9 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
       <div class="score-big">${scoreInfo.score}<span>pts</span></div>
       <div class="score-details">⌨ ${scoreInfo.commands} commande(s) · 💡 ${scoreInfo.hints} indice(s) · ⏱ ${formatDuration(scoreInfo.time)}</div>
     </div>` : '';
+  const hasTranscript = game.transcript && game.transcript.length > 1;
+  const recapSnapshot = hasTranscript ? game.transcript.slice() : null;
+  const recapLabel = (currentScenario() && currentScenario().title) || 'Session';
   overlay.innerHTML = `
     <div class="modal">
       <h2>${title}</h2>
@@ -398,6 +410,7 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
       ${scoreHtml}
       ${flag ? `<div class="flagbox">${flag}</div>` : ''}
       <div class="modal-actions">
+        ${hasTranscript ? `<button class="ghost" id="modal-recap">🎬 Revoir la session</button>` : ''}
         <button class="ghost" id="modal-close">${closeLabel || 'Rester ici'}</button>
         <button class="solid-${flag? 'red':'blue'}" id="modal-primary">${primaryLabel}</button>
       </div>
@@ -405,6 +418,9 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
   document.getElementById('modal-root').appendChild(overlay);
   document.getElementById('modal-close').onclick = ()=>{ overlay.remove(); if(onClose) onClose(); };
   document.getElementById('modal-primary').onclick = ()=>{ overlay.remove(); onPrimary(); };
+  if(hasTranscript){
+    document.getElementById('modal-recap').onclick = ()=>{ overlay.remove(); openRecap(recapSnapshot, recapLabel); };
+  }
 }
 
 /* ---------- Modale de fin de parcours complet (classement local) ---------- */
