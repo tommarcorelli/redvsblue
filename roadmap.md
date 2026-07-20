@@ -126,22 +126,50 @@ Le refactoring conserve un principe strict de non-régression : les règles d'ex
 - *Non fait (extension future possible) : mini classement partagé du jour, qui nécessiterait un backend léger.*
 
 ### v1.3 — Replay cinématique exportable 🟢
-- À la fin d'un scénario, génération d'un résumé animé (timeline des commandes tapées)
-- Exportable en GIF ou courte vidéo, pratique à montrer en soutenance
+**Statut : fait**
+- Chaque ligne affichée dans le terminal (`print()`) est désormais aussi enregistrée dans `game.transcript` ; la modale de fin de phase propose un bouton **🎬 Revoir la session** dès qu'il y a de quoi rejouer — couvre attaque, défense, bac à sable, duel, faille du jour et chaînes en un seul point d'intégration
+- Nouvel écran **Récap** : lecture animée ligne par ligne (effet machine à écrire), lecture/pause, retour au début, vitesse ×1/×2/×4, curseur de progression pour naviguer directement dans la session
+- Export en fichier **HTML autonome** (`⇩ Télécharger (.html)`) : aucune dépendance externe ni encodage GIF/vidéo (hors contrainte "zéro dépendance" du projet), mais un fichier qui se rejoue tout seul dans n'importe quel navigateur, pratique à joindre à une soutenance ou à partager
 
 ### v2.0 — Génération procédurale & éditeur de CTF 🟢
-- Scénarios générés automatiquement (permutation de failles, de noms d'hôtes, de chemins)
-- Éditeur permettant à un professeur ou un étudiant de créer son propre scénario attaque/défense sans toucher au code
+**Statut : fait**
+- Nouvel onglet **🧬 Généré** : scénarios construits à la volée par permutation de 2 modèles paramétrés (secret exposé par des permissions trop larges, binaire SUID oublié) — entreprise, compte de service, chemin de fichier et jeton de drapeau tirés au hasard à chaque partie, donc jamais deux fois le même système
+- Nouvel onglet **🛠️ Éditeur** : un professeur ou un étudiant construit son propre système fichier par fichier (chemin, type, permission, propriétaire, contenu), définit un objectif attaque (« trouver un drapeau ») et un objectif défense (« corriger une permission »), sans écrire une ligne de code
+- Scénarios personnalisés sauvegardés en `localStorage`, exportables/importables en JSON pour être partagés entre navigateurs (utile en classe, sans backend)
+- Techniquement : `buildVfsFromEntries()` (utilitaire partagé) construit une arborescence complète à partir d'une liste plate de fichiers ; `applyScenarioState()` a été extrait de `startPhase()` pour être réutilisé par les modes généré/éditeur ; `checkAutoWin()` a gagné deux branches dédiées (`game.procedural` / `game.custom`), isolées de la progression principale sur le même modèle que le bac à sable, la faille du jour et le duel
+- *Non fait (limite assumée) : la génération procédurale se limite à 2 modèles paramétrés plutôt qu'une synthèse ouverte d'exploits ; l'éditeur ne couvre que les failles de type « fuite d'information » et « permission à corriger », pas les binaires SUID ou les chaînes multi-étapes personnalisées.*
+
+### v2.1 — Difficulté adaptative 🟡
+**Statut : fait**
+- Série de phases (attaque, défense ou étape de chaîne) réussies consécutivement sans le moindre indice, suivie en `localStorage` (`redvsblue_adaptive_v1`) et affichée dans le HUD (`🎯 N sans indice`, mise en évidence dorée une fois le seuil atteint)
+- La série se remet à zéro dès qu'un indice est demandé, où que ce soit dans le parcours
+- Au-delà de 3 phases enchaînées sans indice, le mode guidé arrête d'étaler les commandes toutes faites : chaque étape replie sa commande derrière un bouton « 👁 Afficher la commande », à révéler une par une plutôt que d'un bloc — le joueur qui n'a manifestement plus besoin d'être materné en garde la main
+- Nouveau succès **🎯 Tireur d'élite** (série ≥ 3), sur le même modèle que les succès existants
+- Reprend et concrétise l'idée « Difficulté adaptative » qui figurait jusqu'ici en fin de roadmap dans les idées non planifiées
+
+### v2.2 — Mentor contextuel 🟡
+**Statut : fait**
+- Nouveau bouton **🧑‍🏫 Mentor**, à côté du bouton Indice existant : pose une question socratique orientée vers la réflexion (« qu'est-ce qui a plus de droits que prévu ici ? ») sans jamais révéler la commande exacte, et sans coûter au score (contrairement à un indice classique)
+- Banque de conseils par famille technique — les 5 familles déjà utilisées par la topologie réseau interactive (v0.6) : Linux local, Réseau & annuaires, Conteneurs & orchestration, Cloud & IaC, Applications web — chacune avec ses propres questions côté attaque et côté défense, plus un jeu de conseils génériques en repli pour les scénarios générés/éditeur qui n'appartiennent à aucune famille répertoriée
+- Reprend l'idée « Mentor IA contextuel » de la roadmap, mais volontairement **sans appel à une IA externe** : le projet reste une page statique GitHub Pages sans backend, donc pas de clé API à exposer ; le rôle d'« admin senior qui ne donne pas la réponse toute cuite » est ici assuré par une banque de questions rédigées à la main plutôt que par un modèle de langage
+- Techniquement : `scenarioClusterName()` réutilise directement `NETWORK_CLUSTERS` (v0.6) pour retrouver la famille d'un scénario ; `game.mentorIndex` fait tourner la banque de conseils sans jamais la répéter tant qu'elle n'est pas épuisée ; le panneau `#mentor-list` est vidé à chaque nouvelle phase, chaîne ou étape, sur le même modèle que le panneau d'indices
 
 ---
 
 ## Idées non planifiées (à discuter)
 
-- **Mentor IA contextuel** : encart qui répond aux questions sur la faille en cours en jouant un rôle d'admin senior, sans donner la commande exacte — pousse à réfléchir plutôt qu'à copier-coller.
+### Déjà réalisées hors roadmap initiale
 - **Easter egg dans le code source** : un flag caché dans les fichiers du projet (ex. commentaire encodé dans `scenarios.js`) pour les curieux qui inspectent le code. **Statut : fait** — un commentaire encodé en base64 a été ajouté en tête de `js/scenarios.js`.
-- **Difficulté adaptative** : moins d'indices proposés automatiquement si le joueur enchaîne les scénarios sans en demander.
-- **Succès (achievements)** : badges débloqués en jouant (premier système compromis, premier correctif, phase réussie sans indice, speedrun < 45 s, mi-parcours, parcours complet, paliers du bac à sable), avec toast de notification et grille récapitulative sur l'écran d'accueil. **Statut : fait** — ajouté en même temps que le scoring, hors roadmap initiale.
+- **Succès (achievements)** : badges débloqués en jouant (premier système compromis, premier correctif, phase réussie sans indice, speedrun < 45 s, mi-parcours, parcours complet, paliers du bac à sable, tireur d'élite), avec toast de notification et grille récapitulative sur l'écran d'accueil. **Statut : fait** — ajouté en même temps que le scoring, hors roadmap initiale, puis complété au fil des sessions suivantes (v2.1 notamment).
+
+### Pistes ouvertes
+- **Mini classement partagé de la faille du jour** : nécessiterait un backend léger (actuellement hors périmètre du projet, qui reste 100 % statique/local) — laissé de côté pour l'instant, comme noté dès v1.2.
+- **Difficulté adaptative — volet supplémentaire** : au-delà du mode guidé moins bavard (v2.1), envisager de faire varier également le nombre de commandes "gratuites" avant pénalité de score selon la série en cours, une fois le premier volet éprouvé en usage réel.
+- **Mentor contextuel — génération dynamique** : si un jour le projet accepte une dépendance à un backend, remplacer ou compléter la banque de questions écrites à la main (v2.2) par un vrai modèle de langage contextualisé sur le scénario en cours, capable de répondre à une question libre du joueur plutôt qu'à une banque figée.
+- **v2.3 (piste) — Pack de scénarios "identité & secrets cloud" 🔴** : élargir encore le pool au-delà des 31 scénarios actuels avec des sujets encore non couverts — mauvaise configuration IAM (rôle trop permissif), secret applicatif poussé par erreur dans un dépôt public, jeton OAuth à portée trop large, GitHub Actions avec un secret de dépôt exfiltrable via un workflow détourné.
+- **v2.4 (piste) — Statistiques de progression détaillées 🟡** : un écran "Bilan" séparé du rapport Markdown (v0.5), avec graphiques simples en SVG (déjà utilisés pour la topologie réseau) : temps moyen par famille technique, taux d'indices par catégorie, courbe de score dans le temps — pour visualiser ses points forts/faibles sans avoir à lire un tableau.
+- **v2.5 (piste) — Mode "revanche" sur un scénario raté** : si un joueur a mis beaucoup de temps ou beaucoup d'indices sur un scénario donné, lui proposer explicitement de le retenter en bac à sable ciblé (plutôt qu'un tirage aléatoire complet) une fois le parcours principal terminé.
 
 ---
 
-*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé) et v1.2 (faille du jour avec série façon Wordle), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants.*
+*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé), v1.2 (faille du jour avec série façon Wordle), v1.3 (récap cinématique + export HTML autonome), v2.0 (génération procédurale à 2 modèles + éditeur de scénario sans code), v2.1 (difficulté adaptative : série sans indice + mode guidé progressivement moins bavard) et v2.2 (mentor contextuel : conseils socratiques par famille technique, sans indice ni backend), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants. La roadmap est désormais entièrement implémentée jusqu'à v2.2 ; les pistes ouvertes ci-dessus restent à discuter pour une future session.*

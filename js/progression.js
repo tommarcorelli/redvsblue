@@ -184,6 +184,152 @@ function completeDailyChallenge(){
   });
 }
 
+/* ---------- Difficulté adaptative (v2.1) ---------- */
+// Idée reprise de la roadmap ("moins d'indices proposés automatiquement si le
+// joueur enchaîne les scénarios sans en demander") : on suit une série de
+// phases terminées sans le moindre indice. À partir d'un certain seuil, le
+// mode guidé devient moins bavard (étapes repliées, à révéler une par une)
+// plutôt que de tout étaler d'un coup — le joueur garde la main sur le
+// niveau d'aide qu'il souhaite. La série est réinitialisée dès qu'un indice
+// est demandé, où que ce soit dans le parcours.
+
+const ADAPTIVE_KEY = 'redvsblue_adaptive_v1';
+const ADAPTIVE_THRESHOLD = 3;
+
+function loadAdaptiveStats(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(ADAPTIVE_KEY));
+    if(raw && typeof raw === 'object') return Object.assign({streak:0, best:0}, raw);
+  }catch(e){}
+  return {streak:0, best:0};
+}
+function saveAdaptiveStats(s){
+  try{ localStorage.setItem(ADAPTIVE_KEY, JSON.stringify(s)); }catch(e){}
+}
+function adaptiveStreak(){ return loadAdaptiveStats().streak; }
+function isAdaptiveModeActive(){ return adaptiveStreak() >= ADAPTIVE_THRESHOLD; }
+
+function registerPhaseOutcome(hintsUsed){
+  const s = loadAdaptiveStats();
+  if(hintsUsed === 0){
+    s.streak += 1;
+    if(s.streak > s.best) s.best = s.streak;
+  } else {
+    s.streak = 0;
+  }
+  saveAdaptiveStats(s);
+  if(window.renderAdaptiveBadge) window.renderAdaptiveBadge();
+}
+function breakAdaptiveStreak(){
+  const s = loadAdaptiveStats();
+  if(s.streak !== 0){
+    s.streak = 0;
+    saveAdaptiveStats(s);
+    if(window.renderAdaptiveBadge) window.renderAdaptiveBadge();
+  }
+}
+
+/* ---------- Mentor contextuel (v2.2) ---------- */
+// Reprise de l'idée « Mentor IA contextuel » de la roadmap, adaptée aux
+// contraintes du projet (aucun backend, aucune clé API à exposer sur une
+// page statique GitHub Pages) : une banque de questions socratiques par
+// famille technique (les 5 familles déjà utilisées par la topologie réseau
+// de v0.6), qui pousse à réfléchir sans jamais donner la commande exacte —
+// contrairement au bouton "💡 Indice", classique et pénalisé au score.
+
+const MENTOR_TIPS = {
+  'Linux — élévation locale': {
+    attack: [
+      "Sur une machine Linux, l'énumération commence toujours pareil : qui suis-je, quels binaires puis-je exécuter avec plus de droits que prévu, quels fichiers me sont accessibles en écriture ?",
+      "Une élévation locale vient presque toujours d'un écart entre l'intention (« seul root peut faire ça ») et la réalité (une permission, une capacité ou une tâche planifiée qui contourne cet écart). Qu'est-ce qui, ici, a un droit qu'il ne devrait pas avoir ?",
+      "Une fois un point d'entrée repéré, demandez-vous : qu'exécute-t-il, avec quels droits, et puis-je influencer ce qu'il exécute ?"
+    ],
+    defense: [
+      "Corriger une élévation locale, c'est retirer le droit ou la capacité en trop — jamais cacher le fichier ou le service.",
+      "Quel est le principe du moindre privilège applicable ici, et quelle commande permet d'y revenir précisément ?",
+      "Après votre correctif, rejouez l'attaque avec `replay` : un correctif partiel laisse souvent un chemin alternatif ouvert."
+    ]
+  },
+  'Réseau & annuaires': {
+    attack: [
+      "Un service réseau mal configuré expose souvent plus que prévu à qui sait interroger le bon protocole. Quel service est en jeu, et quelle commande permet de l'interroger sans authentification ?",
+      "Demandez-vous ce que ce service était censé exposer uniquement en interne, et ce qu'un attaquant externe peut en tirer sans identifiants.",
+      "Une fois les informations obtenues, quel accès direct (montage, connexion, requête) permettent-elles d'obtenir sur la cible ?"
+    ],
+    defense: [
+      "La plupart de ces failles réseau se corrigent en restreignant l'accès anonyme ou l'exposition par défaut du service, pas en le désactivant entièrement.",
+      "Quelle option de configuration du service permet de forcer une authentification ou de restreindre les hôtes autorisés ?",
+      "Vérifiez avec `replay` que la même requête, une fois le service durci, échoue bien."
+    ]
+  },
+  'Conteneurs & orchestration': {
+    attack: [
+      "Dans un environnement conteneurisé, la question centrale est : qu'est-ce qui relie ce conteneur (ou ce pod) à la machine hôte de façon plus large que nécessaire ?",
+      "Un socket, un volume ou un privilège mal scopé permet souvent de sortir du conteneur plutôt que d'y rester enfermé. Qu'est-ce qui, ici, franchit cette frontière ?",
+      "Une fois sorti du conteneur, quel accès obtenez-vous réellement sur l'hôte ou le nœud ?"
+    ],
+    defense: [
+      "Le correctif consiste presque toujours à retirer l'accès privilégié ou le montage superflu, pas à supprimer le conteneur.",
+      "Quel paramètre (capacité, volume, contrôleur d'admission, authentification du registre) aurait dû empêcher cette évasion ?",
+      "Confirmez avec `replay` que l'évasion échoue désormais."
+    ]
+  },
+  'Cloud & Infrastructure as Code': {
+    attack: [
+      "Dans le cloud, les secrets fuient rarement par piratage : ils sont souvent simplement mal exposés (stockage public, état d'infrastructure non protégé, API interne joignable). Qu'est-ce qui est accessible ici sans authentification ?",
+      "Une fois une ressource cloud repérée, que contient-elle qui pourrait servir à aller plus loin (identifiants, jetons, configuration) ?",
+      "Réfléchissez à la différence entre ce qui est censé être privé par défaut sur ce service cloud, et ce qui l'est réellement dans ce scénario."
+    ],
+    defense: [
+      "Le correctif porte presque toujours sur la visibilité de la ressource (accès public → privé) ou sur la rotation d'un secret exposé.",
+      "Quelle commande ou quel paramètre restreint l'accès à la ressource cloud concernée au strict nécessaire ?",
+      "Vérifiez avec `replay` que l'accès public initial n'est plus possible."
+    ]
+  },
+  'Applications web': {
+    attack: [
+      "Une application web vulnérable laisse souvent une trace de son fonctionnement interne (code source, jeton, journal) accessible depuis l'extérieur. Que peut-on lire ici qui ne devrait pas l'être ?",
+      "Si l'application traite une entrée utilisateur sans la valider (jeton, gabarit, objet sérialisé), que se passe-t-il si vous la falsifiez ou l'enrichissez ?",
+      "Une fois une faille identifiée côté web, quel niveau d'accès obtenez-vous réellement sur le serveur applicatif ?"
+    ],
+    defense: [
+      "Le correctif consiste à valider ou signer correctement ce que l'application faisait confiance sans vérification.",
+      "Quel mécanisme (validation d'entrée, vérification de signature, retrait de l'exposition publique) manquait ici ?",
+      "Confirmez avec `replay` que la falsification ou la fuite initiale ne fonctionne plus."
+    ]
+  }
+};
+
+const MENTOR_GENERIC = {
+  attack: [
+    "Avant de taper une commande, formulez l'hypothèse que vous testez : que cherchez-vous exactement à confirmer ?",
+    "Qu'est-ce qui, dans ce système, a plus de droits ou plus de visibilité que ce que son rôle affiché laisse penser ?",
+    "Une fois un indice trouvé, quelle est la prochaine étape logique pour transformer cette information en accès ?"
+  ],
+  defense: [
+    "Le correctif le plus solide retire la cause profonde (permission, configuration, absence de validation), pas seulement le symptôme observé.",
+    "Quelle commande permet de vérifier l'état actuel avant de le corriger, pour être sûr de cibler le bon réglage ?",
+    "Une fois le correctif appliqué, `replay` est le meilleur moyen de vérifier qu'il tient réellement la route."
+  ]
+};
+
+function scenarioClusterName(scenarioId){
+  if(typeof NETWORK_CLUSTERS === 'undefined' || !scenarioId) return null;
+  const cluster = NETWORK_CLUSTERS.find(c=> c.ids.includes(scenarioId));
+  return cluster ? cluster.name : null;
+}
+
+function getMentorTips(scn, phase){
+  const clusterName = scn ? scenarioClusterName(scn.id) : null;
+  const bank = (clusterName && MENTOR_TIPS[clusterName]) ? MENTOR_TIPS[clusterName][phase] : null;
+  return (bank && bank.length) ? bank : MENTOR_GENERIC[phase];
+}
+
+function nextMentorTip(scn, phase, index){
+  const tips = getMentorTips(scn, phase);
+  return tips[index % tips.length];
+}
+
 /* ---------- Succès (achievements) ---------- */
 
 const ACHIEVEMENTS = [
@@ -198,7 +344,8 @@ const ACHIEVEMENTS = [
   {id:'first-lesson',    icon:'📖', title:'Curieux',                 desc:"Lire votre première leçon dans le mode Apprendre."},
   {id:'scholar',         icon:'📚', title:'Studieux',                desc:`Lire la moitié des ${SCENARIOS.length} leçons du mode Apprendre.`},
   {id:'theorist',        icon:'🎓', title:'Théoricien',              desc:"Lire l'intégralité des leçons du mode Apprendre."},
-  {id:'chain-master',    icon:'🔗', title:'Enchaîneur',              desc:"Terminer une chaîne d'attaque complète, du premier accès au root."}
+  {id:'chain-master',    icon:'🔗', title:'Enchaîneur',              desc:"Terminer une chaîne d'attaque complète, du premier accès au root."},
+  {id:'sharpshooter',    icon:'🎯', title:'Tireur d\'élite',          desc:`Enchaîner ${ADAPTIVE_THRESHOLD} phases réussies sans le moindre indice.`}
 ];
 
 const ACH_KEY = 'redvsblue_achievements_v1';
@@ -247,6 +394,8 @@ function checkAchievements(ctx){
 
   const chainsDone = (typeof loadDoneChains === 'function') ? loadDoneChains().length : 0;
   tryUnlock('chain-master', chainsDone >= 1);
+
+  tryUnlock('sharpshooter', adaptiveStreak() >= ADAPTIVE_THRESHOLD);
 
   newly.forEach(id=>{
     const a = ACHIEVEMENTS.find(x=>x.id===id);

@@ -33,9 +33,19 @@ document.getElementById('btn-hint').addEventListener('click', ()=>{
   if(game.hintIndex < hints.length){
     game.hintIndex++;
     playSound('hint');
+    breakAdaptiveStreak(); // v2.1 : demander un indice interrompt la série "sans filet"
     renderObjective();
     renderScoreHud();
   }
+});
+
+/* ---------- v2.2 : mentor contextuel ---------- */
+document.getElementById('btn-mentor').addEventListener('click', ()=>{
+  const scn = currentScenario();
+  const tip = nextMentorTip(scn, game.phase, game.mentorIndex);
+  game.mentorIndex++;
+  playSound('hint');
+  renderMentorTip(tip);
 });
 
 document.getElementById('btn-reset-scn').addEventListener('click', ()=>{
@@ -49,6 +59,15 @@ document.getElementById('btn-guided').addEventListener('click', ()=>{
   renderObjective();
 });
 document.getElementById('guided-panel').addEventListener('click', (e)=>{
+  const reveal = e.target.closest('.cmd-reveal');
+  if(reveal){
+    // v2.1 : révèle la commande repliée d'une étape guidée, une fois demandé explicitement
+    const wrap = reveal.closest('.gs-cmds-redacted');
+    const hidden = wrap && wrap.querySelector('.gs-cmds-hidden');
+    if(hidden){ hidden.hidden = false; }
+    reveal.remove();
+    return;
+  }
   const btn = e.target.closest('.cmd-run');
   if(!btn) return;
   termInput.value = btn.dataset.cmd;
@@ -58,6 +77,7 @@ document.getElementById('guided-panel').addEventListener('click', (e)=>{
 /* ---------- v0.7 : bac à sable ---------- */
 document.getElementById('btn-sandbox').addEventListener('click', ()=> startSandboxChallenge());
 document.getElementById('btn-daily').addEventListener('click', ()=> startDailyChallenge());
+document.getElementById('btn-procedural').addEventListener('click', ()=> startProceduralChallenge());
 
 /* ---------- v0.5 : rapport de session ---------- */
 document.getElementById('btn-session-report').addEventListener('click', downloadSessionReport);

@@ -182,13 +182,25 @@ function guidedAttrEsc(s){
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function renderGuidedSteps(info){
-  const head = `<div class="guided-head">🧭 Marche à suivre — cliquez une commande pour l'insérer dans le terminal, puis appuyez sur Entrée.</div>`;
+  // v2.1 : au-delà d'une série de phases réussies sans indice, le mode
+  // guidé arrête d'étaler les commandes toutes faites — il faut cliquer
+  // "Afficher" pour les révéler une par une, une par étape.
+  const redacted = (typeof isAdaptiveModeActive === 'function') && isAdaptiveModeActive();
+  const head = redacted
+    ? `<div class="guided-head">🧭 Marche à suivre — série sans indice en cours (${adaptiveStreak()}) : les commandes sont repliées, cliquez « Afficher » quand vous en avez besoin.</div>`
+    : `<div class="guided-head">🧭 Marche à suivre — cliquez une commande pour l'insérer dans le terminal, puis appuyez sur Entrée.</div>`;
   const steps = info.hints.map((h,k)=>{
     const cmds = (h.match(/`([^`]+)`/g) || []).map(x=> x.slice(1,-1));
     const btns = cmds.map(c=> `<button class="cmd-run" data-cmd="${guidedAttrEsc(c)}">▶ ${escapeHtml(c)}</button>`).join('');
+    let cmdsBlock = '';
+    if(btns){
+      cmdsBlock = redacted
+        ? `<div class="gs-cmds gs-cmds-redacted"><button class="cmd-reveal">👁 Afficher la commande</button><div class="gs-cmds-hidden" hidden>${btns}</div></div>`
+        : `<div class="gs-cmds">${btns}</div>`;
+    }
     return `<div class="guided-step">
       <span class="gs-num">${k+1}</span>
-      <div class="gs-body"><div class="gs-text">${fmtLessonText(h)}</div>${btns?`<div class="gs-cmds">${btns}</div>`:''}</div>
+      <div class="gs-body"><div class="gs-text">${fmtLessonText(h)}</div>${cmdsBlock}</div>
     </div>`;
   }).join('');
   return head + steps;
@@ -207,6 +219,7 @@ function renderChainObjective(){
     d.textContent = stage.hints[k];
     hintsList.appendChild(d);
   }
+  clearMentorPanel();
   const gb = document.getElementById('btn-guided');
   const gp = document.getElementById('guided-panel');
   if(gb && gp){
@@ -233,6 +246,7 @@ function renderObjective(){
     d.textContent = info.hints[k];
     hintsList.appendChild(d);
   }
+  clearMentorPanel();
 
   // Mode guidé (indisponible en bac à sable pour préserver le défi libre)
   const guidedBtn = document.getElementById('btn-guided');
@@ -272,6 +286,14 @@ function renderTopbar(){
     phasePill.className = 'phase-pill sandbox';
     const stats = loadSandboxStats();
     progressTag.textContent = `${stats.solved} défi(s) résolu(s)` + (stats.bestTimeMs!==null ? ` — record ${formatDuration(stats.bestTimeMs/1000)}` : '');
+  } else if(game.procedural){
+    phasePill.textContent = '🧬 SCÉNARIO GÉNÉRÉ';
+    phasePill.className = 'phase-pill sandbox';
+    progressTag.textContent = game.proceduralScenario ? game.proceduralScenario.category : '';
+  } else if(game.custom){
+    phasePill.textContent = '🛠️ SCÉNARIO ÉDITEUR';
+    phasePill.className = 'phase-pill sandbox';
+    progressTag.textContent = game.customScenario ? game.customScenario.title : '';
   } else {
     phasePill.textContent = game.phase==='attack' ? 'PHASE ATTAQUE' : 'PHASE DÉFENSE';
     phasePill.className = 'phase-pill ' + game.phase;
@@ -293,8 +315,36 @@ function renderScoreHud(){
   } else {
     scoreEl.textContent = `⌨ ${game.history.length} commande(s)`;
   }
+  renderAdaptiveBadge();
 }
 window.renderScoreHud = renderScoreHud;
+
+/* ---------- v2.2 : mentor contextuel ---------- */
+function clearMentorPanel(){
+  const el = document.getElementById('mentor-list');
+  if(el) el.innerHTML = '';
+}
+function renderMentorTip(tip){
+  const el = document.getElementById('mentor-list');
+  if(!el) return;
+  const d = document.createElement('div');
+  d.className = 'mentor-tip';
+  d.innerHTML = `<span class="mentor-tip-icon">🧑‍🏫</span><span>${escapeHtml(tip)}</span>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+window.renderMentorTip = renderMentorTip;
+
+/* ---------- v2.1 : badge de série sans indice ---------- */
+function renderAdaptiveBadge(){
+  const el = document.getElementById('hud-adaptive');
+  if(!el) return;
+  const n = adaptiveStreak();
+  if(n <= 0){ el.textContent = ''; el.classList.remove('hot'); return; }
+  el.textContent = `🎯 ${n} sans indice`;
+  el.classList.toggle('hot', n >= ADAPTIVE_THRESHOLD);
+}
+window.renderAdaptiveBadge = renderAdaptiveBadge;
 
 function renderPrompt(){
   promptLabel.className = 'prompt-label ' + game.phase;
@@ -329,6 +379,7 @@ function print(text, cls){
   termBody.appendChild(div);
   termBody.scrollTop = termBody.scrollHeight;
   if(cls === 'err') playSound('error');
+  if(game.transcript) game.transcript.push({text, cls: cls||'out', t: Date.now()});
 }
 function printPromptEcho(cmd){
   const label = promptLabel.textContent;
@@ -391,6 +442,9 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
       <div class="score-big">${scoreInfo.score}<span>pts</span></div>
       <div class="score-details">⌨ ${scoreInfo.commands} commande(s) · 💡 ${scoreInfo.hints} indice(s) · ⏱ ${formatDuration(scoreInfo.time)}</div>
     </div>` : '';
+  const hasTranscript = game.transcript && game.transcript.length > 1;
+  const recapSnapshot = hasTranscript ? game.transcript.slice() : null;
+  const recapLabel = (currentScenario() && currentScenario().title) || 'Session';
   overlay.innerHTML = `
     <div class="modal">
       <h2>${title}</h2>
@@ -398,6 +452,7 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
       ${scoreHtml}
       ${flag ? `<div class="flagbox">${flag}</div>` : ''}
       <div class="modal-actions">
+        ${hasTranscript ? `<button class="ghost" id="modal-recap">🎬 Revoir la session</button>` : ''}
         <button class="ghost" id="modal-close">${closeLabel || 'Rester ici'}</button>
         <button class="solid-${flag? 'red':'blue'}" id="modal-primary">${primaryLabel}</button>
       </div>
@@ -405,6 +460,9 @@ function showModal({title, body, flag, scoreInfo, primaryLabel, onPrimary, close
   document.getElementById('modal-root').appendChild(overlay);
   document.getElementById('modal-close').onclick = ()=>{ overlay.remove(); if(onClose) onClose(); };
   document.getElementById('modal-primary').onclick = ()=>{ overlay.remove(); onPrimary(); };
+  if(hasTranscript){
+    document.getElementById('modal-recap').onclick = ()=>{ overlay.remove(); openRecap(recapSnapshot, recapLabel); };
+  }
 }
 
 /* ---------- Modale de fin de parcours complet (classement local) ---------- */
