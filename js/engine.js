@@ -7,7 +7,20 @@ const STORAGE_KEY = 'redvsblue_progress_v1';
 function loadProgress(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw) return JSON.parse(raw);
+    if(raw){
+      const p = JSON.parse(raw);
+      // Rétrocompatibilité : toute sauvegarde faite avant l'ajout d'un pack de
+      // scénarios (ex. v0.2bis, v0.2ter, v2.3...) ne connaît pas les nouveaux
+      // ids. Sans ce complément, progress[nouvelId] est undefined et fait
+      // planter tout code qui lit .attack/.defense dessus (topologie réseau,
+      // écran d'accueil, écran Bilan...).
+      let changed = false;
+      SCENARIOS.forEach(s=>{
+        if(!p[s.id]){ p[s.id] = {attack:false, defense:false}; changed = true; }
+      });
+      if(changed) saveProgress(p);
+      return p;
+    }
   }catch(e){}
   const p = {};
   SCENARIOS.forEach(s=> p[s.id] = {attack:false, defense:false});
@@ -740,12 +753,13 @@ function dispatchBuiltin(cmd){
 function completeAttack(){
   const scn = currentScenario();
   const elapsedSec = (Date.now() - game.phaseStartTime) / 1000;
-  const score = computeScore(game.history.length, game.hintIndex, elapsedSec);
+  const score = computeScore(game.history.length, game.hintIndex, elapsedSec, adaptiveFreeCommands());
   progress[scn.id].attack = true;
   progress[scn.id].scoreAttack = score;
   progress[scn.id].timeAttack = Math.round(elapsedSec);
   progress[scn.id].hintsAttack = game.hintIndex;
   progress[scn.id].commandsAttack = game.history.length;
+  progress[scn.id].atAttack = Date.now();
   saveProgress(progress);
   playSound('success');
   registerPhaseOutcome(game.hintIndex);
@@ -766,12 +780,13 @@ function completeAttack(){
 function completeDefense(){
   const scn = currentScenario();
   const elapsedSec = (Date.now() - game.phaseStartTime) / 1000;
-  const score = computeScore(game.history.length, game.hintIndex, elapsedSec);
+  const score = computeScore(game.history.length, game.hintIndex, elapsedSec, adaptiveFreeCommands());
   progress[scn.id].defense = true;
   progress[scn.id].scoreDefense = score;
   progress[scn.id].timeDefense = Math.round(elapsedSec);
   progress[scn.id].hintsDefense = game.hintIndex;
   progress[scn.id].commandsDefense = game.history.length;
+  progress[scn.id].atDefense = Date.now();
   saveProgress(progress);
   playSound('hardened');
   registerPhaseOutcome(game.hintIndex);

