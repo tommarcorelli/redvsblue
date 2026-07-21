@@ -17,11 +17,14 @@ function escapeHtml(str){
 }
 
 /* ---------- Scoring ---------- */
-// Base 1000 points par phase, 3 commandes "gratuites", puis pénalités
-// progressives par commande, par indice et par tranche de temps écoulée.
-function computeScore(commands, hints, elapsedSec){
+// Base 1000 points par phase, 3 commandes "gratuites" par défaut (davantage
+// si le joueur a une série sans indice en cours — voir adaptiveFreeCommands
+// ci-dessous), puis pénalités progressives par commande, par indice et par
+// tranche de temps écoulée.
+function computeScore(commands, hints, elapsedSec, freeCommands){
+  const free = (typeof freeCommands === 'number') ? freeCommands : 3;
   let score = 1000;
-  score -= Math.max(0, commands - 3) * 12;
+  score -= Math.max(0, commands - free) * 12;
   score -= hints * 70;
   score -= Math.min(300, Math.floor(elapsedSec / 5) * 3);
   return Math.max(50, Math.round(score));
@@ -90,6 +93,21 @@ function startSandboxChallenge(forceIndex){
   document.getElementById('term-input').focus();
 }
 
+// Revanche ciblée sur la phase de défense (comble le manque noté en v2.5 :
+// le bac à sable historique — v0.7 — ne couvrait que l'attaque). Comme
+// progress[scn.id].defense est déjà true pour un scénario déjà sécurisé, le
+// garde-fou existant dans la commande `replay` (js/engine.js) empêche déjà
+// tout écrasement du score enregistré : aucun nouveau mode « sandbox » n'est
+// nécessaire, il suffit de rejouer la phase de défense normalement.
+function startDefenseRevanche(idx){
+  game.sandbox = false;
+  game.daily = false;
+  startPhase(idx, 'defense');
+  showScreen('game');
+  document.getElementById('term-input').focus();
+}
+window.startDefenseRevanche = startDefenseRevanche;
+
 function completeSandboxAttack(){
   const elapsedSec = (Date.now() - game.phaseStartTime) / 1000;
   const stats = loadSandboxStats();
@@ -129,6 +147,48 @@ function getDailyChallenge(){
   const date = todayDateStr();
   const idx = hashDateStr(date) % SCENARIOS.length;
   return { date, idx, scenario: SCENARIOS[idx] };
+}
+
+// ---------- Classement du jour simulé localement ----------
+// Choix assumé (pas de backend pour ce projet 100% statique) : un
+// classement fictif, mais déterministe par date — même pseudo-aléatoire
+// pour tout le monde ce jour-là plutôt qu'un tirage différent à chaque
+// rechargement. Clairement labellisé "simulé" dans l'UI pour ne pas
+// laisser croire à un vrai classement partagé entre joueurs.
+const DAILY_FAKE_NAMES = [
+  'r00tkid','byte_ninja','pkt_sniffer','nullPointer','sudo_sam','h4shcat',
+  'blueTeamBea','cipherFox','packetPanda','shellphie','defcon_dana','w1r3shark'
+];
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function dailyFakeCohort(date){
+  const {scenario} = getDailyChallenge();
+  return DAILY_FAKE_NAMES.map(name=>{
+    const rnd = mulberry32(hashDateStr(date + '::' + name + '::' + scenario.id));
+    // Temps plausible entre ~35s et ~260s, biaisé vers le milieu (moyenne de 2 tirages).
+    const t = 35 + Math.round(((rnd() + rnd()) / 2) * 225);
+    return { name, elapsedSec: t };
+  }).sort((a,b)=> a.elapsedSec - b.elapsedSec);
+}
+function dailyLeaderboardRank(date, playerElapsedSec){
+  const cohort = dailyFakeCohort(date);
+  const place = 1 + cohort.filter(r=> r.elapsedSec < playerElapsedSec).length;
+  return { place, total: cohort.length + 1 };
+}
+function dailyLeaderboardWithPlayer(date){
+  const cohort = dailyFakeCohort(date);
+  const stats = loadDailyStats();
+  const done = stats.history[date];
+  const rows = cohort.map(r=> ({name:r.name, elapsedSec:r.elapsedSec, you:false}));
+  if(done) rows.push({name:'vous', elapsedSec: done.elapsedSec, you:true});
+  rows.sort((a,b)=> a.elapsedSec - b.elapsedSec);
+  return rows;
 }
 
 function loadDailyStats(){
@@ -171,11 +231,13 @@ function completeDailyChallenge(){
   }
 
   if(window.renderDailyPanel) renderDailyPanel();
+  const rank = dailyLeaderboardRank(date, stats.history[date].elapsedSec);
   showModal({
     title: alreadyDone ? '🗓️ Entraînement — déjà résolu aujourd\'hui' : '🗓️ Faille du jour résolue !',
-    body: alreadyDone
+    body: (alreadyDone
       ? `Vous aviez déjà validé la faille du ${date} en ${formatDuration(stats.history[date].elapsedSec)}. Cette tentative ne modifie pas votre série (elle sert juste à s'entraîner).`
-      : `Faille du ${date} résolue en ${formatDuration(elapsedSec)} — « ${currentScenario().title} ». Série actuelle : ${stats.streak} jour${stats.streak>1?'s':''} consécutif${stats.streak>1?'s':''}.`,
+      : `Faille du ${date} résolue en ${formatDuration(elapsedSec)} — « ${currentScenario().title} ». Série actuelle : ${stats.streak} jour${stats.streak>1?'s':''} consécutif${stats.streak>1?'s':''}.`)
+      + ` Classement simulé du jour : ${rank.place}ᵉ sur ${rank.total} profils fictifs.`,
     flag: extractFlagFromLog(),
     primaryLabel:'Fermer',
     closeLabel:'Retour à l\'accueil',
@@ -208,6 +270,15 @@ function saveAdaptiveStats(s){
 }
 function adaptiveStreak(){ return loadAdaptiveStats().streak; }
 function isAdaptiveModeActive(){ return adaptiveStreak() >= ADAPTIVE_THRESHOLD; }
+
+// v2.1 volet supplémentaire : la série sans indice ne se contente plus
+// d'assouplir le mode guidé, elle élargit aussi le nombre de commandes
+// "gratuites" avant pénalité de score en computeScore() — +1 tous les 2
+// crans de série, plafonné à +5 (soit 8 commandes gratuites max au lieu de
+// 3), pour ne pas non plus rendre le score trivial à haute série.
+function adaptiveFreeCommands(){
+  return 3 + Math.min(5, Math.floor(adaptiveStreak() / 2));
+}
 
 function registerPhaseOutcome(hintsUsed){
   const s = loadAdaptiveStats();
@@ -242,60 +313,96 @@ const MENTOR_TIPS = {
     attack: [
       "Sur une machine Linux, l'énumération commence toujours pareil : qui suis-je, quels binaires puis-je exécuter avec plus de droits que prévu, quels fichiers me sont accessibles en écriture ?",
       "Une élévation locale vient presque toujours d'un écart entre l'intention (« seul root peut faire ça ») et la réalité (une permission, une capacité ou une tâche planifiée qui contourne cet écart). Qu'est-ce qui, ici, a un droit qu'il ne devrait pas avoir ?",
-      "Une fois un point d'entrée repéré, demandez-vous : qu'exécute-t-il, avec quels droits, et puis-je influencer ce qu'il exécute ?"
+      "Une fois un point d'entrée repéré, demandez-vous : qu'exécute-t-il, avec quels droits, et puis-je influencer ce qu'il exécute ?",
+      "Pensez aux trois familles classiques d'élévation Linux : un binaire SUID/sudo mal configuré, une capacité Linux (`getcap`) accordée en trop, ou une tâche planifiée (cron) qui manipule un fichier modifiable par vous. Laquelle correspond à ce que vous observez ?",
+      "Si vous hésitez encore entre plusieurs pistes, listez d'abord systématiquement ce qui tourne avec des droits élevés (`ps`, `sudo -l`, `find ... -perm`) avant de choisir laquelle creuser — c'est plus rapide que de deviner."
     ],
     defense: [
       "Corriger une élévation locale, c'est retirer le droit ou la capacité en trop — jamais cacher le fichier ou le service.",
       "Quel est le principe du moindre privilège applicable ici, et quelle commande permet d'y revenir précisément ?",
-      "Après votre correctif, rejouez l'attaque avec `replay` : un correctif partiel laisse souvent un chemin alternatif ouvert."
+      "Après votre correctif, rejouez l'attaque avec `replay` : un correctif partiel laisse souvent un chemin alternatif ouvert.",
+      "Demandez-vous précisément : qui (utilisateur, groupe, capacité) avait ce droit en trop, et quelle est la valeur minimale à laquelle il faut le ramener plutôt que de tout supprimer en bloc ?",
+      "Si vous ne savez pas quel fichier éditer, repensez à celui que vous avez examiné en phase d'attaque pour repérer la faille — c'est généralement le même qu'il faut corriger."
     ]
   },
   'Réseau & annuaires': {
     attack: [
       "Un service réseau mal configuré expose souvent plus que prévu à qui sait interroger le bon protocole. Quel service est en jeu, et quelle commande permet de l'interroger sans authentification ?",
       "Demandez-vous ce que ce service était censé exposer uniquement en interne, et ce qu'un attaquant externe peut en tirer sans identifiants.",
-      "Une fois les informations obtenues, quel accès direct (montage, connexion, requête) permettent-elles d'obtenir sur la cible ?"
+      "Une fois les informations obtenues, quel accès direct (montage, connexion, requête) permettent-elles d'obtenir sur la cible ?",
+      "Identifiez d'abord le protocole exact en jeu (partage de fichiers, annuaire, cache clé-valeur, base de données...) : chacun a sa propre commande d'énumération anonyme, et c'est elle qu'il faut trouver en premier.",
+      "Si l'énumération anonyme ne révèle rien d'exploitable directement, cherchez ce qu'elle révèle indirectement (nom d'utilisateur, chemin, version) et qui pourrait servir à l'étape suivante."
     ],
     defense: [
       "La plupart de ces failles réseau se corrigent en restreignant l'accès anonyme ou l'exposition par défaut du service, pas en le désactivant entièrement.",
       "Quelle option de configuration du service permet de forcer une authentification ou de restreindre les hôtes autorisés ?",
-      "Vérifiez avec `replay` que la même requête, une fois le service durci, échoue bien."
+      "Vérifiez avec `replay` que la même requête, une fois le service durci, échoue bien.",
+      "Cherchez dans le fichier de configuration du service la ligne qui autorise l'accès anonyme ou sans restriction — c'est presque toujours une seule directive à changer, pas une refonte complète.",
+      "Si plusieurs réglages semblent liés, corrigez d'abord celui qui correspond exactement à la commande que vous avez utilisée en attaque : c'est le chemin le plus court vers un `replay` réussi."
     ]
   },
   'Conteneurs & orchestration': {
     attack: [
       "Dans un environnement conteneurisé, la question centrale est : qu'est-ce qui relie ce conteneur (ou ce pod) à la machine hôte de façon plus large que nécessaire ?",
       "Un socket, un volume ou un privilège mal scopé permet souvent de sortir du conteneur plutôt que d'y rester enfermé. Qu'est-ce qui, ici, franchit cette frontière ?",
-      "Une fois sorti du conteneur, quel accès obtenez-vous réellement sur l'hôte ou le nœud ?"
+      "Une fois sorti du conteneur, quel accès obtenez-vous réellement sur l'hôte ou le nœud ?",
+      "Vérifiez systématiquement trois points : le conteneur tourne-t-il en mode privilégié ou avec des capacités étendues, un socket ou un volume sensible de l'hôte est-il monté à l'intérieur, et une API d'orchestration est-elle joignable sans authentification ?",
+      "Si vous avez trouvé un accès en lecture à un socket ou une API, la question suivante est : quelle commande de ce même outil permet d'exécuter du code plutôt que juste de lister des informations ?"
     ],
     defense: [
       "Le correctif consiste presque toujours à retirer l'accès privilégié ou le montage superflu, pas à supprimer le conteneur.",
       "Quel paramètre (capacité, volume, contrôleur d'admission, authentification du registre) aurait dû empêcher cette évasion ?",
-      "Confirmez avec `replay` que l'évasion échoue désormais."
+      "Confirmez avec `replay` que l'évasion échoue désormais.",
+      "Repérez précisément quelle option de lancement (drapeau de privilège, montage, capacité ajoutée) a permis la sortie du conteneur — c'est celle-là qu'il faut retirer, sans toucher au reste de la configuration.",
+      "Si le correctif touche à l'authentification d'un registre ou d'une API d'orchestration, vérifiez que vous exigez bien une authentification plutôt que de simplement masquer l'endpoint."
     ]
   },
   'Cloud & Infrastructure as Code': {
     attack: [
       "Dans le cloud, les secrets fuient rarement par piratage : ils sont souvent simplement mal exposés (stockage public, état d'infrastructure non protégé, API interne joignable). Qu'est-ce qui est accessible ici sans authentification ?",
       "Une fois une ressource cloud repérée, que contient-elle qui pourrait servir à aller plus loin (identifiants, jetons, configuration) ?",
-      "Réfléchissez à la différence entre ce qui est censé être privé par défaut sur ce service cloud, et ce qui l'est réellement dans ce scénario."
+      "Réfléchissez à la différence entre ce qui est censé être privé par défaut sur ce service cloud, et ce qui l'est réellement dans ce scénario.",
+      "Le cloud ajoute une dimension supplémentaire au « qui a accès à quoi » classique : un rôle, une clé ou un jeton peut porter une portée bien plus large que son usage réel. Comparez ce que l'identité utilisée est censée faire et ce qu'elle peut réellement faire.",
+      "Une fois un identifiant ou un jeton trouvé, la question devient : quelle action de l'API du service (créer, supprimer, lister) confirme que la sur-permission est bien exploitable, pas seulement théorique ?"
     ],
     defense: [
       "Le correctif porte presque toujours sur la visibilité de la ressource (accès public → privé) ou sur la rotation d'un secret exposé.",
       "Quelle commande ou quel paramètre restreint l'accès à la ressource cloud concernée au strict nécessaire ?",
-      "Vérifiez avec `replay` que l'accès public initial n'est plus possible."
+      "Vérifiez avec `replay` que l'accès public initial n'est plus possible.",
+      "Pour un rôle, une clé ou un jeton trop permissif, la correction consiste à réduire la portée déclarée (l'action ou le service autorisé) au strict usage réel constaté — pas à révoquer l'identité entière si elle reste nécessaire.",
+      "Si le secret lui-même a fuité (codé en dur, poussé par erreur), corriger l'endroit où il est stocké ne suffit pas toujours en pratique : ici, dans ce scénario simulé, retirez-le du code et faites-le lire depuis une variable d'environnement."
     ]
   },
   'Applications web': {
     attack: [
       "Une application web vulnérable laisse souvent une trace de son fonctionnement interne (code source, jeton, journal) accessible depuis l'extérieur. Que peut-on lire ici qui ne devrait pas l'être ?",
       "Si l'application traite une entrée utilisateur sans la valider (jeton, gabarit, objet sérialisé), que se passe-t-il si vous la falsifiez ou l'enrichissez ?",
-      "Une fois une faille identifiée côté web, quel niveau d'accès obtenez-vous réellement sur le serveur applicatif ?"
+      "Une fois une faille identifiée côté web, quel niveau d'accès obtenez-vous réellement sur le serveur applicatif ?",
+      "Distinguez les deux grandes familles de failles web : celles où l'application fait trop confiance à une donnée qu'elle reçoit (jeton, objet sérialisé, gabarit), et celles où elle expose par erreur quelque chose qui devrait rester interne (fichier, journal, endpoint). Laquelle correspond à ce scénario ?",
+      "Si vous avez trouvé une entrée non validée, cherchez la syntaxe précise que ce composant (bibliothèque de gabarits, format de jeton, désérialiseur) accepte et qui n'était pas censée être atteignable par un utilisateur externe."
     ],
     defense: [
       "Le correctif consiste à valider ou signer correctement ce que l'application faisait confiance sans vérification.",
       "Quel mécanisme (validation d'entrée, vérification de signature, retrait de l'exposition publique) manquait ici ?",
-      "Confirmez avec `replay` que la falsification ou la fuite initiale ne fonctionne plus."
+      "Confirmez avec `replay` que la falsification ou la fuite initiale ne fonctionne plus.",
+      "Si la faille vient d'une entrée non validée, le correctif porte sur le point de validation exact (algorithme accepté, format attendu, échappement) — pas sur un filtrage générique en périphérie qui laisserait d'autres variantes passer.",
+      "Si la faille vient d'une exposition (fichier, endpoint, journal), vérifiez que le correctif retire l'accès public plutôt que de simplement renommer ou déplacer la ressource exposée."
+    ]
+  },
+  'Active Directory / Windows': {
+    attack: [
+      "Dans un domaine Active Directory, la question centrale est toujours : quel compte ou quel objet a plus de droits, plus de confiance, ou moins de protection que ce que son rôle affiché laisse penser ?",
+      "Les attaques AD classiques exploitent presque toujours un attribut de configuration mal réglé (pré-authentification désactivée, délégation trop permissive, droit de réplication accordé à tort, ACL trop large) plutôt qu'une vraie faille logicielle. Lequel correspond à ce scénario ?",
+      "Une fois un identifiant, un hash ou un ticket obtenu, quelle est la prochaine étape logique pour le transformer en accès plus large sur le domaine ?",
+      "Distinguez ce qui s'attaque directement à un compte (mot de passe, hash récupérable hors-ligne) de ce qui s'attaque à une relation de confiance entre objets du domaine (délégation, réplication, permission sur un objet de stratégie). Laquelle est en jeu ici ?",
+      "Si vous avez trouvé un attribut ou un droit anormal, la commande suivante est presque toujours celle qui interroge spécifiquement ce mécanisme Kerberos ou cette ACL — pas une commande d'énumération générique déjà utilisée."
+    ],
+    defense: [
+      "Le correctif consiste à retirer l'attribut ou le droit accordé à tort, jamais à cacher le compte ou l'objet concerné.",
+      "Quel est le réglage par défaut, sécurisé, auquel il faut revenir précisément sur ce compte ou cet objet ?",
+      "Vérifiez avec `replay` que la même chaîne d'attaque échoue bien une fois le correctif appliqué.",
+      "Demandez-vous quel est le champ exact (booléen, liste de groupes, droit ACL) qui porte la sur-permission, plutôt que de modifier l'objet entier.",
+      "Si le correctif touche une GPO ou une délégation, vérifiez bien que seul le groupe légitime (administrateurs du domaine) garde le droit concerné — pas qu'il soit simplement ajouté en plus du groupe trop large."
     ]
   }
 };
@@ -304,12 +411,16 @@ const MENTOR_GENERIC = {
   attack: [
     "Avant de taper une commande, formulez l'hypothèse que vous testez : que cherchez-vous exactement à confirmer ?",
     "Qu'est-ce qui, dans ce système, a plus de droits ou plus de visibilité que ce que son rôle affiché laisse penser ?",
-    "Une fois un indice trouvé, quelle est la prochaine étape logique pour transformer cette information en accès ?"
+    "Une fois un indice trouvé, quelle est la prochaine étape logique pour transformer cette information en accès ?",
+    "Si vous êtes bloqué, revenez à l'énumération de base : qui êtes-vous, où êtes-vous, et qu'est-ce qui est accessible en écriture ou en exécution que vous n'attendriez pas ?",
+    "Relisez le titre et la catégorie du scénario : ils désignent souvent directement la classe de faille en jeu, ce qui réduit beaucoup l'espace de recherche."
   ],
   defense: [
     "Le correctif le plus solide retire la cause profonde (permission, configuration, absence de validation), pas seulement le symptôme observé.",
     "Quelle commande permet de vérifier l'état actuel avant de le corriger, pour être sûr de cibler le bon réglage ?",
-    "Une fois le correctif appliqué, `replay` est le meilleur moyen de vérifier qu'il tient réellement la route."
+    "Une fois le correctif appliqué, `replay` est le meilleur moyen de vérifier qu'il tient réellement la route.",
+    "Si `replay` échoue encore après votre correctif, demandez-vous si vous avez corrigé exactement ce que l'attaque exploitait, ou seulement une variante proche.",
+    "Le fichier ou paramètre à modifier est presque toujours celui que vous avez examiné ou exploité pendant la phase d'attaque — reprenez cette piste avant d'en chercher une nouvelle."
   ]
 };
 

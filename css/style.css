@@ -597,6 +597,17 @@ textarea#nano-area{
 .daily-card .dc-done{color:var(--green);font-weight:600;font-size:12.5px;margin-top:4px;}
 .daily-stats{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;}
 .daily-stats b{color:var(--gold);}
+.daily-leaderboard{border:1px solid var(--line);border-radius:8px;background:var(--bg-panel-2);padding:12px 14px;}
+.dlb-label{font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;}
+.dlb-simulated{font-weight:400;color:var(--text-dim);font-size:10.5px;}
+.dlb-rows{display:flex;flex-direction:column;gap:2px;}
+.dlb-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:3px 4px;border-radius:5px;}
+.dlb-row.dlb-you{background:rgba(212,175,55,.12);color:var(--gold);font-weight:700;}
+.dlb-rank{width:26px;color:var(--text-dim);flex-shrink:0;}
+.dlb-row.dlb-you .dlb-rank{color:var(--gold);}
+.dlb-name{flex:1;font-family:var(--mono);}
+.dlb-time{color:var(--text-dim);font-family:var(--mono);}
+.dlb-row.dlb-you .dlb-time{color:var(--gold);}
 .sandbox-side-title{font-size:13px;font-weight:700;color:var(--gold);}
 .sandbox-side-desc{font-size:11.5px;color:var(--text-dim);line-height:1.55;}
 .sandbox-side-stat{font-size:12px;}
@@ -715,6 +726,36 @@ textarea#nano-area{
 .dchain-name{flex:1;font-size:13px;color:var(--text);}
 .dchain-meta{font-size:11px;color:var(--text-dim);white-space:nowrap;}
 .dchain-row.done .dchain-meta{color:var(--gold);}
+.dfam-sub-2{margin-top:2px;}
+
+.dash-score{margin-top:24px;text-align:left;}
+.score-curve-empty{
+  border:1px dashed var(--line);border-radius:10px;padding:22px;text-align:center;
+  font-size:12.5px;color:var(--text-dim);
+}
+.score-curve-svg{width:100%;max-width:680px;height:auto;display:block;}
+.score-curve-grid{stroke:var(--line);stroke-width:1;opacity:.4;}
+.score-curve-axis{fill:var(--text-dim);font-size:9px;font-family:var(--mono);}
+.score-curve-line{fill:none;stroke:var(--gold);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}
+.score-curve-dot{fill:var(--bg-panel);stroke:var(--gold);stroke-width:1.6;}
+.score-curve-dot:hover{fill:var(--gold);}
+
+.dash-revanche-wrap{margin-top:24px;text-align:left;}
+.dash-revanche-desc{font-size:12px;color:var(--text-dim);line-height:1.6;max-width:640px;margin:-4px 0 12px;}
+.dash-revanche{display:flex;flex-direction:column;gap:9px;}
+.drev-empty{
+  border:1px dashed var(--line);border-radius:10px;padding:18px;text-align:center;
+  font-size:12.5px;color:var(--text-dim);
+}
+.drev-card{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  border:1px solid var(--line);border-left:3px solid var(--red);border-radius:10px;
+  padding:12px 15px;background:var(--bg-panel);
+}
+.drev-title{font-size:13px;color:var(--text);font-weight:600;}
+.drev-meta{font-size:11px;color:var(--text-dim);margin-top:3px;}
+.drev-btn{flex-shrink:0;white-space:nowrap;}
+.drev-actions{display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;}
 
 /* ============================================================
    Mode Apprendre (cours)
@@ -813,6 +854,11 @@ textarea#nano-area{
 .score-big{font-size:26px;font-weight:800;color:var(--gold);}
 .score-big span{font-size:12px;font-weight:400;color:var(--text-dim);margin-left:6px;}
 .score-details{font-size:12px;color:var(--text-dim);}
+.modal-revanche-note{
+  font-size:12px;color:var(--text-dim);line-height:1.55;text-align:left;
+  border:1px solid var(--line);border-left:3px solid var(--red);border-radius:8px;
+  padding:10px 13px;margin-top:14px;
+}
 .lb-name-label{display:block;font-size:12px;color:var(--text-dim);margin:14px 0 6px;}
 .lb-name-input{
   width:100%;background:#000;border:1px solid var(--line);border-radius:6px;color:var(--text);

@@ -154,6 +154,45 @@ Le refactoring conserve un principe strict de non-régression : les règles d'ex
 - Reprend l'idée « Mentor IA contextuel » de la roadmap, mais volontairement **sans appel à une IA externe** : le projet reste une page statique GitHub Pages sans backend, donc pas de clé API à exposer ; le rôle d'« admin senior qui ne donne pas la réponse toute cuite » est ici assuré par une banque de questions rédigées à la main plutôt que par un modèle de langage
 - Techniquement : `scenarioClusterName()` réutilise directement `NETWORK_CLUSTERS` (v0.6) pour retrouver la famille d'un scénario ; `game.mentorIndex` fait tourner la banque de conseils sans jamais la répéter tant qu'elle n'est pas épuisée ; le panneau `#mentor-list` est vidé à chaque nouvelle phase, chaîne ou étape, sur le même modèle que le panneau d'indices
 
+### v2.3 — Pack « identité & secrets cloud » 🔴
+**Statut : fait** (4 scénarios supplémentaires, portant le total à 35)
+- Rôle IAM trop permissif attaché à une fonction serverless publique (`iam:*` au lieu du strict `s3:GetObject`), exploité pour créer un utilisateur IAM administrateur persistant
+- Clé API de paiement codée en dur dans un dépôt public (`git clone` + `grep`), au lieu d'être chargée depuis une variable d'environnement
+- Jeton OAuth intégré avec une portée `repo:admin` alors que l'usage prévu ne nécessitait que `profile:read`, détourné pour supprimer un dépôt de production
+- Secret de dépôt (`DEPLOY_TOKEN`) exfiltré via un workflow GitHub Actions déclenché sur `pull_request_target` et exécutant le code d'une pull request externe avec accès aux secrets
+
+Les 4 nouveaux scénarios rejoignent la famille technique « Cloud & Infrastructure as Code » de la topologie réseau (v0.6) et héritent donc automatiquement de sa banque de conseils du mentor contextuel (v2.2), sans qu'aucune nouvelle famille n'ait été nécessaire.
+
+### v2.4 — Bilan : statistiques de progression détaillées 🟡
+**Statut : fait**
+- Un écran **📊 Bilan**, avec tuiles de synthèse (systèmes sécurisés/compromis, chaînes réussies, score cumulé, domaine le plus fort), un **radar de compétences** en SVG (attaqué vs sécurisé par famille technique) et une carte par famille (barre de progression, rang, temps moyen, taux d'indices)
+- Nouveau : **temps moyen par famille technique** et **taux d'indices** (part des phases résolues avec au moins un indice) sur chaque carte famille — les deux métriques manquaient encore à l'implémentation existante
+- Nouveau : **courbe de score dans le temps**, un graphique SVG en ligne traçant chaque phase notée dans l'ordre chronologique réel de résolution (nouveaux champs `atAttack` / `atDefense` horodatés à la complétion de chaque phase)
+- **Deux corrections d'intégrité découvertes en auditant cet écran, non liées au thème v2.4 mais bloquantes pour lui** :
+  1. `loadProgress()` ne complétait jamais les scénarios manquants d'une sauvegarde `localStorage` déjà existante lors de l'ajout d'un nouveau pack — un joueur ayant progressé avant un pack aurait vu planter la topologie réseau, l'écran d'accueil et ce Bilan. Le chargement comble désormais automatiquement les ids absents (et persiste le complément).
+  2. La table `SKILL_FAMILIES` utilisée par ce Bilan n'avait pas été mise à jour lors de l'ajout de la v2.3 : les 4 scénarios « identité & secrets cloud » étaient invisibles du radar et de la carte « Cloud & IaC ». Corrigé en même temps.
+- Point d'histoire : l'écran Bilan (structure HTML, CSS, radar et cartes famille) existait déjà dans le dépôt sans jamais avoir été consigné dans cette roadmap — vraisemblablement introduit lors d'une fusion antérieure (`js/ui.js` l'appelait déjà via `renderDashboard()`). Cette session comble ce trou de documentation en même temps qu'elle complète la fonctionnalité jusqu'au niveau décrit par la piste v2.4 d'origine.
+
+### v2.5 — Mode revanche 🟡
+**Statut : fait**
+- Nouvelle section **🔁 Mode revanche** dans l'onglet Bilan : liste les scénarios déjà bouclés (attaque + défense) mais résolus avec un score combiné sous 750/1000 ou au moins un indice utilisé — le score (v0.4) capture déjà à la fois le temps et les indices, donc sert directement de critère de repérage, sans nouvelle mécanique de suivi
+- Chaque point faible affiche son score moyen et le nombre d'indices utilisés, avec un bouton **🔁 Revanche** qui relance directement ce scénario en bac à sable ciblé (`startSandboxChallenge(index)`, déjà existant depuis v0.7) — sans toucher à la progression du parcours principal
+- La modale de fin de parcours complet met désormais en avant le pire point faible et invite à consulter le Bilan pour la revanche, conformément à l'idée « une fois le parcours principal terminé » de la piste d'origine
+- **Volet défense ajouté dans la foulée** : chaque carte propose aussi un bouton *🛡️ Revanche défense*, qui relance directement la phase de défense du scénario (`startPhase(idx, 'defense')`). Le garde-fou déjà présent dans la commande `replay` (`if(!progress[scn.id].defense) completeDefense()`) empêche tout écrasement du score enregistré, donc aucune nouvelle mécanique de bac à sable n'a été nécessaire pour ce volet — seulement un point d'entrée dédié.
+
+### v2.1 (volet supplémentaire) — Commandes gratuites variables selon la série 🟡
+**Statut : fait**
+- Le nombre de commandes "gratuites" avant pénalité de score (`computeScore`, v0.4) n'était plus figé à 3 : il augmente désormais avec la série sans indice en cours (v2.1) — `+1 commande gratuite tous les 2 crans de série, plafonné à +5` (8 commandes gratuites maximum au lieu de 3), pour ne pas rendre le score trivial à haute série
+- Le badge de série dans le HUD affiche maintenant aussi le nombre de commandes gratuites en cours (`🎯 4 sans indice · 5 cmd gratuites`), et l'estimation de score en direct pendant la partie applique la même règle que le score final
+- Choix de conception assumé pour cette session, faute de retour utilisateur préalable sur les seuils exacts : à ajuster si l'usage réel montre que la progression est trop lente/rapide
+
+### v2.7 — Pack « sécurité des API » 🔴
+**Statut : fait** (2 scénarios supplémentaires, portant le total à 41)
+- **IDOR sur une API de facturation** (*Broken Object Level Authorization*) : un identifiant de facture purement numérique et séquentiel, sans aucune vérification que la ressource demandée appartient bien au client authentifié — l'attaque consiste simplement à changer l'identifiant dans l'URL pour lire la facture d'un autre client (en l'occurrence celle du compte administrateur)
+- **Affectation de masse (mass assignment) à l'inscription** : le point d'entrée de création de compte construit l'utilisateur depuis l'objet JSON complet de la requête (`User(**request.json)`) sans filtrer les champs autorisés, permettant de glisser un champ `role: admin` non prévu par le formulaire officiel pour obtenir un compte administrateur dès l'inscription
+- Les deux scénarios rejoignent la famille technique « Applications web » déjà existante (topologie réseau v0.6 et Bilan de compétences v2.4), et héritent donc automatiquement de sa banque de conseils du mentor contextuel (v2.2) sans qu'aucune nouvelle famille n'ait été nécessaire — sur le même principe que le pack v2.3
+- Choix de ces deux failles en priorité car elles couvrent deux classes très fréquentes dans le Top 10 API Security de l'OWASP (autorisation au niveau objet, affectation de propriétés non filtrées) et qui n'étaient pas encore représentées dans le pack applicatif existant (SSTI, JWT, désérialisation, Log4Shell, dépôt Git exposé)
+
 ---
 
 ## Idées non planifiées (à discuter)
@@ -161,15 +200,40 @@ Le refactoring conserve un principe strict de non-régression : les règles d'ex
 ### Déjà réalisées hors roadmap initiale
 - **Easter egg dans le code source** : un flag caché dans les fichiers du projet (ex. commentaire encodé dans `scenarios.js`) pour les curieux qui inspectent le code. **Statut : fait** — un commentaire encodé en base64 a été ajouté en tête de `js/scenarios.js`.
 - **Succès (achievements)** : badges débloqués en jouant (premier système compromis, premier correctif, phase réussie sans indice, speedrun < 45 s, mi-parcours, parcours complet, paliers du bac à sable, tireur d'élite), avec toast de notification et grille récapitulative sur l'écran d'accueil. **Statut : fait** — ajouté en même temps que le scoring, hors roadmap initiale, puis complété au fil des sessions suivantes (v2.1 notamment).
+- **Bilan (tableau de bord de compétences)** : voir v2.4 ci-dessus — la base (radar, cartes famille, chaînes) était déjà présente hors roadmap ; cette session l'a documentée et complétée.
 
-### Pistes ouvertes
+### Pistes ouvertes (nécessitent un backend)
 - **Mini classement partagé de la faille du jour** : nécessiterait un backend léger (actuellement hors périmètre du projet, qui reste 100 % statique/local) — laissé de côté pour l'instant, comme noté dès v1.2.
-- **Difficulté adaptative — volet supplémentaire** : au-delà du mode guidé moins bavard (v2.1), envisager de faire varier également le nombre de commandes "gratuites" avant pénalité de score selon la série en cours, une fois le premier volet éprouvé en usage réel.
 - **Mentor contextuel — génération dynamique** : si un jour le projet accepte une dépendance à un backend, remplacer ou compléter la banque de questions écrites à la main (v2.2) par un vrai modèle de langage contextualisé sur le scénario en cours, capable de répondre à une question libre du joueur plutôt qu'à une banque figée.
-- **v2.3 (piste) — Pack de scénarios "identité & secrets cloud" 🔴** : élargir encore le pool au-delà des 31 scénarios actuels avec des sujets encore non couverts — mauvaise configuration IAM (rôle trop permissif), secret applicatif poussé par erreur dans un dépôt public, jeton OAuth à portée trop large, GitHub Actions avec un secret de dépôt exfiltrable via un workflow détourné.
-- **v2.4 (piste) — Statistiques de progression détaillées 🟡** : un écran "Bilan" séparé du rapport Markdown (v0.5), avec graphiques simples en SVG (déjà utilisés pour la topologie réseau) : temps moyen par famille technique, taux d'indices par catégorie, courbe de score dans le temps — pour visualiser ses points forts/faibles sans avoir à lire un tableau.
-- **v2.5 (piste) — Mode "revanche" sur un scénario raté** : si un joueur a mis beaucoup de temps ou beaucoup d'indices sur un scénario donné, lui proposer explicitement de le retenter en bac à sable ciblé (plutôt qu'un tirage aléatoire complet) une fois le parcours principal terminé.
+
+Ces deux dernières pistes nécessitent un backend, hors du périmètre 100 % statique assumé par le projet — elles restent en suspens jusqu'à décision contraire.
+
+### Mini classement de la faille du jour — version simulée localement 🟡
+**Statut : fait** (alternative choisie explicitement, plutôt qu'un vrai backend)
+- Un classement du jour apparaît maintenant sous les statistiques de la faille du jour : 12 profils fictifs dont le temps est généré de façon **déterministe par date** (même graine pseudo-aléatoire pour tout le monde ce jour-là, via `mulberry32` seedé par un hachage de la date + du pseudo + du scénario du jour) — donc reproductible, mais **pas réellement partagé entre joueurs**, ce qui est clairement indiqué dans l'interface (« simulé localement — pas de serveur partagé »)
+- Le score du joueur (si résolu aujourd'hui) est inséré au bon rang dans ce classement fictif, et son rang est aussi rappelé dans la modale de fin de faille du jour
+- Choix assumé par l'utilisateur du projet plutôt que d'ajouter une dépendance à un service tiers (JSONBin, Supabase...) à un projet 100 % statique
+
+### Mentor contextuel — enrichissement de la banque 🟡
+**Statut : fait** (alternative choisie explicitement, plutôt qu'une intégration LLM avec clé API)
+- Chaque famille technique (Linux, Réseau, Conteneurs, Cloud & IaC, Web) passe de 3 à **5 conseils socratiques** par phase (attaque et défense), la banque générique de secours également — soit +67 % de contenu sans jamais révéler la commande exacte
+- Les deux nouveaux conseils par phase sont volontairement plus concrets que les trois premiers (ex. : nommer les 2-3 familles de causes possibles plutôt qu'une piste unique, ou pointer vers la méthode plutôt que vers la commande) — pour accompagner un joueur qui clique plusieurs fois sur le mentor sans jamais lui donner la réponse
+- La famille « Cloud & Infrastructure as Code » a été enrichie en priorité, car c'est elle qui couvre les 4 scénarios ajoutés en v2.3 (identité & secrets cloud)
+- Aucune modification de `getMentorTips`/`nextMentorTip` n'a été nécessaire : la logique de cyclage (`tips[index % tips.length]`) s'adapte déjà dynamiquement à la taille de chaque banque
 
 ---
 
-*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé), v1.2 (faille du jour avec série façon Wordle), v1.3 (récap cinématique + export HTML autonome), v2.0 (génération procédurale à 2 modèles + éditeur de scénario sans code), v2.1 (difficulté adaptative : série sans indice + mode guidé progressivement moins bavard) et v2.2 (mentor contextuel : conseils socratiques par famille technique, sans indice ni backend), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants. La roadmap est désormais entièrement implémentée jusqu'à v2.2 ; les pistes ouvertes ci-dessus restent à discuter pour une future session.*
+### v2.6 — Pack « Active Directory / Windows » 🔴
+**Statut : fait** (4 scénarios supplémentaires, portant le total à 39)
+- **AS-REP Roasting** : un compte de service dont la pré-authentification Kerberos est désactivée, permettant de récupérer un ticket AS-REP cassable hors-ligne sans jamais s'authentifier au préalable
+- **Délégation Kerberos sans contrainte** : un compte machine configuré en délégation sans contrainte, dont le cache de tickets est détourné (via un abus du service Print Spooler) pour usurper l'identité d'un contrôleur de domaine
+- **Abus DCSync** : un compte de service disposant à tort des droits de réplication du domaine, exploité pour extraire le hash de `krbtgt` et ouvrir la voie à la falsification de tickets (Golden Ticket)
+- **GPO modifiable par tous les utilisateurs** : une stratégie de groupe appliquée aux postes administrateurs, dont l'ACL autorise en écriture le groupe « Utilisateurs du domaine » au lieu des seuls administrateurs, détournée pour déployer un compte administrateur local via son script de démarrage
+- **Nouvelle famille technique dédiée « Active Directory / Windows »**, dans la topologie réseau (v0.6) et le Bilan de compétences (v2.4) — elle absorbe au passage l'unique scénario Windows déjà présent (`windows-unquoted-path`), auparavant mal classé dans « Réseau & annuaires »
+- Banque de conseils du mentor contextuel (v2.2) enrichie avec cette nouvelle famille, à 5 conseils par phase comme les autres
+
+---
+
+*Dernière mise à jour : implémentation de v0.4 (scoring, chrono, classement local), v0.5 (rapport de session Markdown), v0.6 (topologie réseau interactive), v0.7 (bac à sable), v0.8 (ambiance sonore), v0.9 (mode face-à-face local par iframes synchronisées), v1.0 (chaîne à mouvement latéral sur 3 machines distinctes), v1.1 (thèmes clair/contraste élevé), v1.2 (faille du jour avec série façon Wordle, puis complétée cette session par un classement simulé localement), v1.3 (récap cinématique + export HTML autonome), v2.0 (génération procédurale à 2 modèles + éditeur de scénario sans code), v2.1 (difficulté adaptative : série sans indice + mode guidé progressivement moins bavard, puis complétée par des commandes gratuites variables selon la série), v2.2 (mentor contextuel : conseils socratiques par famille technique, puis enrichis de 3 à 5 conseils par phase), v2.3 (pack « identité & secrets cloud » — total 35 scénarios), v2.4 (Bilan : temps moyen et taux d'indices par famille, courbe de score chronologique, plus deux correctifs d'intégrité de la progression sauvegardée), v2.5 (mode revanche : repérage des points faibles par score combiné, relance ciblée en bac à sable pour l'attaque *et* pour la défense) v2.6 (pack « Active Directory / Windows » — AS-REP Roasting, délégation sans contrainte, abus DCSync, GPO modifiable — total 39 scénarios, nouvelle famille technique dédiée) et v2.7 (pack « sécurité des API » — IDOR sur une API de facturation, affectation de masse à l'inscription — total 41 scénarios, famille « Applications web » existante), plus un système de succès non planifié initialement — sans modifier la mécanique des scénarios existants. À cette occasion, la timeline condensée de la page d'accueil (`js/hero-fx.js`) a également été resynchronisée avec ce fichier détaillé.*
+
+*Maintenance additionnelle (hors roadmap fonctionnelle) : le dépôt n'avait jamais eu de `README.md` malgré l'hébergement GitHub Pages déjà en place — ajouté. Le service worker (`sw.js`) précachait une liste d'écrans figée depuis sa création et n'avait jamais été mise à jour au fil des ajouts : `duel.html`, `js/duel.js`, `js/recap.js`, `js/procedural.js` et `js/editor.js` en étaient absents, ce qui pouvait faire échouer ces écrans hors-ligne au tout premier lancement de la PWA avant une première visite en ligne. Corrigé, version de cache incrémentée.*
