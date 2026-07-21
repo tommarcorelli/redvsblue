@@ -326,7 +326,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — IDOR sur une API de facturation (accès à la facture d'un autre client par simple changement d'identifiant), affectation de masse (mass assignment) permettant de s'auto-attribuer le rôle admin dès l'inscription — total : 41 scénarios, famille « Applications web »." },
   { version:'v2.8', tag:'attaque', tagColor:'var(--red)', done:true,
     title:'Pack « sécurité des API », 2ᵉ vague',
-    desc:"2 scénarios ajoutés — exposition excessive de données sur l'annuaire des utilisateurs (jeton de réinitialisation exposé puis exploité), absence de limitation de débit sur l'authentification (mot de passe admin trouvé par force brute) — total : 43 scénarios, famille « Applications web »." }
+    desc:"2 scénarios ajoutés — exposition excessive de données sur l'annuaire des utilisateurs (jeton de réinitialisation exposé puis exploité), absence de limitation de débit sur l'authentification (mot de passe admin trouvé par force brute) — total : 43 scénarios, famille « Applications web »." },
+  { version:'v2.9', tag:'système', tagColor:'var(--gold)', done:true,
+    title:'Consolidation : messagerie du mode duel durcie',
+    desc:"Revue générale du code (aucun bug ni dette technique majeure trouvée) et durcissement des échanges postMessage du mode duel : targetOrigin explicite au lieu de '*', vérification de l'origine à la réception — aucun changement de comportement pour le joueur." }
 ];
 
 function renderRoadmap(){
