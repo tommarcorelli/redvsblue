@@ -26,7 +26,8 @@ const NETWORK_CLUSTERS = [
     ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce',
          'python-pickle-deserialization','ssti-jinja2-flask',
          'idor-invoice-api','mass-assignment-signup',
-         'excessive-data-exposure-api','missing-rate-limit-bruteforce'] },
+         'excessive-data-exposure-api','missing-rate-limit-bruteforce',
+         'graphql-introspection-privilege-leak','cors-reflected-origin-credentials'] },
   { name:'Active Directory / Windows', color:'#7cb3ff',
     ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation',
          'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin'] }

@@ -29,14 +29,15 @@ Aucune installation n'est nécessaire.
 
 ## ✨ Fonctionnalités
 
-- **53 scénarios attaque/défense** couvrant 6 grandes familles techniques :
+- **55 scénarios attaque/défense** couvrant 6 grandes familles techniques :
   élévation de privilèges Linux, réseau & annuaires (dont Memcached et
   session nulle SMB), conteneurs & orchestration (dont RBAC Kubernetes
   trop permissif, PID namespace hôte partagé, NetworkPolicy absente,
   etcd non authentifié et évasion via cgroup release_agent),
   cloud & infrastructure as code (dont identité, secrets et confusion de
   dépendances), applications web (dont IDOR, mass assignment, exposition
-  excessive de données et absence de limitation de débit côté API), et
+  excessive de données, absence de limitation de débit côté API,
+  introspection GraphQL non protégée et CORS mal configuré), et
   Active Directory / Windows (AS-REP Roasting, délégation Kerberos,
   DCSync, GPO, Kerberoasting, Pass-the-Hash).
 - **Scénarios chaînés** : mouvement latéral réel sur plusieurs machines
@@ -78,7 +79,7 @@ duel.html            Page dédiée au mode duel (deux terminaux synchronisés)
 manifest.json / sw.js  PWA (installation + cache hors-ligne)
 css/style.css         Tout le style du projet
 js/
-  scenarios.js         Les 53 scénarios (vfs, règles d'exploit, correctifs)
+  scenarios.js         Les 55 scénarios (vfs, règles d'exploit, correctifs)
   chains.js            Les scénarios chaînés multi-machines
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense

