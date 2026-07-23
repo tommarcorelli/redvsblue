@@ -48,18 +48,22 @@
         <span class="r">RED</span><span class="nav-vs">vs</span><span class="b">BLUE</span>
       </button>
       <div class="home-nav-tabs" id="home-nav-tabs">
-        <button class="home-tab active" data-tab="accueil">Accueil</button>
-        <button class="home-tab" data-tab="dossiers">Dossiers</button>
-        <button class="home-tab" data-tab="chaines">Chaînes</button>
-        <button class="home-tab" data-tab="apprendre">Apprendre</button>
-        <button class="home-tab" data-tab="reseau">Réseau</button>
-        <button class="home-tab" data-tab="sandbox">Bac à sable</button>
+        <button class="home-tab active" data-tab="accueil">🏠 Accueil</button>
+        <span class="nav-divider" aria-hidden="true"></span>
+        <button class="home-tab" data-tab="dossiers">📁 Dossiers</button>
+        <button class="home-tab" data-tab="chaines">🔗 Chaînes</button>
+        <button class="home-tab" data-tab="apprendre">🎓 Apprendre</button>
+        <button class="home-tab" data-tab="reseau">🌐 Réseau</button>
+        <span class="nav-divider" aria-hidden="true"></span>
+        <button class="home-tab" data-tab="sandbox">🧪 Bac à sable</button>
         <button class="home-tab" data-tab="jour">🗓️ Faille du jour</button>
         <button class="home-tab" data-tab="genere">🧬 Généré</button>
         <button class="home-tab" data-tab="editeur">🛠️ Éditeur</button>
-        <button class="home-tab" data-tab="succes">Succès</button>
-        <button class="home-tab" data-tab="bilan">Bilan</button>
-        <button class="home-tab" data-tab="classement">Classement</button>
+        <span class="nav-divider" aria-hidden="true"></span>
+        <button class="home-tab" data-tab="succes">🏆 Succès</button>
+        <button class="home-tab" data-tab="bilan">📊 Bilan</button>
+        <button class="home-tab" data-tab="classement">🏅 Classement</button>
+        <span class="nav-divider" aria-hidden="true"></span>
         <a class="home-tab" href="duel.html" id="home-tab-duel">⚔️ Duel</a>
       </div>
       <div class="theme-switch" id="theme-switch" role="group" aria-label="Choix du thème">
@@ -167,6 +171,7 @@
           <div class="sandbox-panel-desc">Un même système tiré au sort chaque jour, identique pour tout le monde — une seule tentative compte pour la série, rejouable ensuite pour s'entraîner. N'affecte pas la progression du parcours.</div>
           <div class="daily-card" id="daily-card"></div>
           <div class="daily-stats" id="daily-stats"></div>
+          <div class="daily-leaderboard" id="daily-leaderboard"></div>
           <button class="big primary" id="btn-daily">🗓️ Lancer la faille du jour</button>
         </div>
       </section>
@@ -255,6 +260,15 @@
           <div class="dash-families" id="dash-families"></div>
         </div>
         <div class="dash-chains" id="dash-chains"></div>
+        <div class="dash-score" id="dash-score">
+          <h3 class="dash-sub-label">📈 Score dans le temps</h3>
+          <div id="dash-score-curve"></div>
+        </div>
+        <div class="dash-revanche-wrap" id="dash-revanche-wrap">
+          <h3 class="dash-sub-label">🔁 Mode revanche — points faibles à retenter</h3>
+          <div class="dash-revanche-desc">Scénarios déjà bouclés mais résolus avec beaucoup d'indices ou de temps. Relancez-les ciblés en bac à sable pour vous entraîner, sans affecter votre progression du parcours principal.</div>
+          <div class="dash-revanche" id="dash-revanche"></div>
+        </div>
       </section>
 
       <!-- ===== Onglet : Classement + rapport ===== -->

@@ -1,7 +1,8 @@
-const CACHE_NAME = 'redvsblue-cache-v15';
+const CACHE_NAME = 'redvsblue-cache-v25';
 const ASSETS = [
   './',
   './index.html',
+  './duel.html',
   './manifest.json',
   './css/style.css',
   './js/scenarios.js',
@@ -12,6 +13,10 @@ const ASSETS = [
   './js/ui.js',
   './js/hero-fx.js',
   './js/main.js',
+  './js/duel.js',
+  './js/recap.js',
+  './js/procedural.js',
+  './js/editor.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

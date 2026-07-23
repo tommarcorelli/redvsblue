@@ -10,15 +10,25 @@ const NETWORK_CLUSTERS = [
          'path-hijack-cron','passwd-world-writable','shadow-world-readable','sudo-ld-preload',
          'systemd-unit-writable','tar-wildcard-injection','pwnkit-cve-2021-4034','capability-dac-read-search'] },
   { name:'Réseau & annuaires', color:'var(--blue)',
-    ids:['nfs-no-root-squash','dns-axfr','ldap-anonymous-bind','windows-unquoted-path',
-         'redis-unauthenticated','elasticsearch-unauthenticated'] },
+    ids:['nfs-no-root-squash','dns-axfr','ldap-anonymous-bind',
+         'redis-unauthenticated','elasticsearch-unauthenticated',
+         'memcached-unauthenticated','smb-null-session'] },
   { name:'Conteneurs & orchestration', color:'var(--gold)',
-    ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated'] },
+    ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated',
+         'k8s-rbac-clusterrolebinding-overpermissive','docker-pid-host-ptrace-injection',
+         'k8s-missing-networkpolicy-lateral-movement'] },
   { name:'Cloud & Infrastructure as Code', color:'var(--green)',
-    ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open'] },
+    ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open',
+         'iam-role-overpermissive','secret-in-public-repo','oauth-token-overscope','github-actions-secret-leak',
+         'dependency-confusion-pip'] },
   { name:'Applications web', color:'var(--purple)',
     ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce',
-         'python-pickle-deserialization','ssti-jinja2-flask'] }
+         'python-pickle-deserialization','ssti-jinja2-flask',
+         'idor-invoice-api','mass-assignment-signup',
+         'excessive-data-exposure-api','missing-rate-limit-bruteforce'] },
+  { name:'Active Directory / Windows', color:'#7cb3ff',
+    ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation',
+         'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin'] }
 ];
 
 function netmapNodeStatus(i){

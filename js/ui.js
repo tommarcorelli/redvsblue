@@ -27,6 +27,11 @@ function switchHomeTab(name){
 }
 window.switchHomeTab = switchHomeTab;
 
+function familyColorForScenario(id){
+  const cluster = NETWORK_CLUSTERS.find(c => c.ids.includes(id));
+  return cluster ? cluster.color : 'transparent';
+}
+
 function renderHome(){
   const total = SCENARIOS.length;
   const done = SCENARIOS.filter(s=>progress[s.id].attack && progress[s.id].defense).length;
@@ -43,6 +48,8 @@ function renderHome(){
     const statusText = !unlocked ? 'Verrouillé' : (p.attack && p.defense) ? 'Sécurisé' : 'En cours';
     const card = document.createElement('div');
     card.className = 'mission-card ' + statusClass;
+    card.style.setProperty('--fam-color', familyColorForScenario(s.id));
+    card.style.setProperty('--reveal-delay', (Math.min(i,20)*22)+'ms');
     card.innerHTML = `
       <div class="mc-head">
         <span class="mc-num">Paire ${String(i+1).padStart(2,'0')} · ${s.category}</span>
@@ -310,7 +317,7 @@ function renderScoreHud(){
   const elapsedSec = (Date.now() - game.phaseStartTime) / 1000;
   timerEl.textContent = '⏱ ' + formatDuration(elapsedSec);
   if(game.phase === 'attack' || game.sandbox){
-    const est = computeScore(game.history.length, game.hintIndex, elapsedSec);
+    const est = computeScore(game.history.length, game.hintIndex, elapsedSec, adaptiveFreeCommands());
     scoreEl.textContent = `🧮 ~${est} pts · ⌨ ${game.history.length}`;
   } else {
     scoreEl.textContent = `⌨ ${game.history.length} commande(s)`;
@@ -341,7 +348,8 @@ function renderAdaptiveBadge(){
   if(!el) return;
   const n = adaptiveStreak();
   if(n <= 0){ el.textContent = ''; el.classList.remove('hot'); return; }
-  el.textContent = `🎯 ${n} sans indice`;
+  const free = adaptiveFreeCommands();
+  el.textContent = `🎯 ${n} sans indice · ${free} cmd gratuites`;
   el.classList.toggle('hot', n >= ADAPTIVE_THRESHOLD);
 }
 window.renderAdaptiveBadge = renderAdaptiveBadge;
@@ -379,7 +387,23 @@ function print(text, cls){
   termBody.appendChild(div);
   termBody.scrollTop = termBody.scrollHeight;
   if(cls === 'err') playSound('error');
+  if(cls === 'flagline') triggerFlagCelebration();
   if(game.transcript) game.transcript.push({text, cls: cls||'out', t: Date.now()});
+}
+function triggerFlagCelebration(){
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let overlay = document.getElementById('flag-flash-overlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'flag-flash-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.classList.remove('play'); void overlay.offsetWidth; overlay.classList.add('play');
+  const termWrap = document.querySelector('.term-wrap');
+  if(termWrap){
+    termWrap.classList.remove('flag-hit'); void termWrap.offsetWidth; termWrap.classList.add('flag-hit');
+    setTimeout(()=> termWrap.classList.remove('flag-hit'), 450);
+  }
 }
 function printPromptEcho(cmd){
   const label = promptLabel.textContent;
@@ -472,6 +496,7 @@ function showRunCompleteModal(){
   const totalTimeSec = totalPlayTimeSec();
   let lastName = '';
   try{ lastName = localStorage.getItem('redvsblue_last_name_v1') || ''; }catch(e){}
+  const weak = strugglingScenarios(3);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -482,6 +507,7 @@ function showRunCompleteModal(){
         <div class="score-big">${total}<span>pts au total</span></div>
         <div class="score-details">⏱ temps cumulé : ${formatDuration(totalTimeSec)}</div>
       </div>
+      ${weak.length ? `<div class="modal-revanche-note">🔁 ${weak.length} scénario(s) résolu(s) avec beaucoup d'indices ou de temps (ex. « ${escapeHtml(weak[0].scenario.title)} ») — un mode revanche ciblé vous attend dans l'onglet Bilan.</div>` : ''}
       <label class="lb-name-label" for="lb-name-input">Pseudo pour le classement local :</label>
       <input id="lb-name-input" class="lb-name-input" maxlength="24" autocomplete="off" placeholder="ex : bob" value="${escapeHtml(lastName)}"/>
       <div class="modal-actions">
@@ -498,6 +524,7 @@ function showRunCompleteModal(){
     saveLeaderboardEntry({name, totalScore: total, totalTimeSec, date: new Date().toISOString()});
     overlay.remove();
     goHome();
+    if(weak.length) switchHomeTab('bilan');
   };
 }
 
@@ -585,29 +612,77 @@ function renderDailyPanel(){
     <div class="sb-stat"><b>${Object.keys(stats.history).length}</b> faille(s) du jour résolue(s) au total</div>`;
   const btn = document.getElementById('btn-daily');
   if(btn) btn.textContent = done ? '🗓️ Rejouer pour s\'entraîner' : '🗓️ Lancer la faille du jour';
+
+  const lbEl = document.getElementById('daily-leaderboard');
+  if(lbEl){
+    const rows = dailyLeaderboardWithPlayer(date);
+    lbEl.innerHTML = `
+      <div class="dlb-label">🏁 Classement du jour <span class="dlb-simulated">(simulé localement — pas de serveur partagé)</span></div>
+      <div class="dlb-rows">
+        ${rows.map((r,i)=>`<div class="dlb-row${r.you?' dlb-you':''}">
+          <span class="dlb-rank">#${i+1}</span>
+          <span class="dlb-name">${escapeHtml(r.name)}</span>
+          <span class="dlb-time">${formatDuration(r.elapsedSec)}</span>
+        </div>`).join('')}
+      </div>`;
+  }
 }
 window.renderDailyPanel = renderDailyPanel;
 
-/* ---------- Bilan : tableau de bord de compétences ---------- */
+/* ---------- Mode revanche (v2.5) ---------- */
+// Repère les scénarios déjà bouclés (attaque + défense) où le joueur a mis
+// beaucoup de temps ou beaucoup d'indices — le score combiné (v0.4) capture
+// déjà les deux à la fois, donc on l'utilise comme critère de faiblesse.
+const REVANCHE_SCORE_THRESHOLD = 750; // sur 1000, score moyen des deux phases
+function strugglingScenarios(limit){
+  const rows = [];
+  SCENARIOS.forEach((s,i)=>{
+    const p = progress[s.id];
+    if(!p || !p.attack || !p.defense) return;
+    if(typeof p.scoreAttack !== 'number' || typeof p.scoreDefense !== 'number') return;
+    const avgScore = (p.scoreAttack + p.scoreDefense) / 2;
+    const hints = (p.hintsAttack||0) + (p.hintsDefense||0);
+    if(avgScore < REVANCHE_SCORE_THRESHOLD || hints > 0){
+      rows.push({index:i, scenario:s, avgScore, hints});
+    }
+  });
+  rows.sort((a,b)=> a.avgScore - b.avgScore);
+  return limit ? rows.slice(0, limit) : rows;
+}
 
 const SKILL_FAMILIES = [
   { name:'Privesc Linux', icon:'🐧', color:'var(--green)', ids:['suid-find','cron-writable','sudo-awk','ssh-key-exposed','capability-setuid-python','path-hijack-cron','passwd-world-writable','shadow-world-readable','sudo-ld-preload','systemd-unit-writable','tar-wildcard-injection','pwnkit-cve-2021-4034','capability-dac-read-search'] },
-  { name:'Réseau & services', icon:'🌐', color:'var(--blue)', ids:['nfs-no-root-squash','dns-axfr','ldap-anonymous-bind','redis-unauthenticated','elasticsearch-unauthenticated'] },
-  { name:'Web & API', icon:'🕸️', color:'var(--red)', ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce','python-pickle-deserialization','ssti-jinja2-flask'] },
-  { name:'Cloud & IaC', icon:'☁️', color:'var(--gold)', ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open'] },
-  { name:'Conteneurs', icon:'📦', color:'var(--purple)', ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated'] },
-  { name:'Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path'] }
+  { name:'Réseau & services', icon:'🌐', color:'var(--blue)', ids:['nfs-no-root-squash','dns-axfr','ldap-anonymous-bind','redis-unauthenticated','elasticsearch-unauthenticated','memcached-unauthenticated','smb-null-session'] },
+  { name:'Web & API', icon:'🕸️', color:'var(--red)', ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce','python-pickle-deserialization','ssti-jinja2-flask','idor-invoice-api','mass-assignment-signup','excessive-data-exposure-api','missing-rate-limit-bruteforce'] },
+  { name:'Cloud & IaC', icon:'☁️', color:'var(--gold)', ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open','iam-role-overpermissive','secret-in-public-repo','oauth-token-overscope','github-actions-secret-leak','dependency-confusion-pip'] },
+  { name:'Conteneurs', icon:'📦', color:'var(--purple)', ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated','k8s-rbac-clusterrolebinding-overpermissive','docker-pid-host-ptrace-injection','k8s-missing-networkpolicy-lateral-movement'] },
+  { name:'Active Directory / Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation','ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin'] }
 ];
 
 function familyStat(fam){
-  let attacked=0, secured=0;
+  let attacked=0, secured=0, phasesDone=0, phasesWithHint=0, timeSum=0, timeCount=0;
   fam.ids.forEach(id=>{
     const p = progress[id]; if(!p) return;
     if(p.attack) attacked++;
     if(p.attack && p.defense) secured++;
+    if(p.attack){
+      phasesDone++;
+      if(p.hintsAttack) phasesWithHint++;
+      if(typeof p.timeAttack === 'number'){ timeSum += p.timeAttack; timeCount++; }
+    }
+    if(p.defense){
+      phasesDone++;
+      if(p.hintsDefense) phasesWithHint++;
+      if(typeof p.timeDefense === 'number'){ timeSum += p.timeDefense; timeCount++; }
+    }
   });
   const total = fam.ids.length;
-  return {total, attacked, secured, attackedPct: total?attacked/total:0, securedPct: total?secured/total:0};
+  return {
+    total, attacked, secured,
+    attackedPct: total?attacked/total:0, securedPct: total?secured/total:0,
+    avgTimeSec: timeCount ? timeSum/timeCount : null,
+    hintRate: phasesDone ? phasesWithHint/phasesDone : null
+  };
 }
 
 function buildSkillRadar(stats){
@@ -637,6 +712,48 @@ function buildSkillRadar(stats){
     <polygon class="rad-attacked" points="${polyAttacked}"/>
     <polygon class="rad-secured" points="${polySecured}"/>
     ${labels}
+  </svg>`;
+}
+
+function buildScoreCurve(){
+  // Rassemble chaque phase notée (attaque ou défense) avec son horodatage.
+  // Les sauvegardes antérieures à cet ajout n'ont pas de timestamp : on les
+  // ignore proprement plutôt que de fausser l'ordre chronologique.
+  const points = [];
+  SCENARIOS.forEach(s=>{
+    const p = progress[s.id]; if(!p) return;
+    if(p.attack && typeof p.atAttack === 'number' && typeof p.scoreAttack === 'number'){
+      points.push({at:p.atAttack, score:p.scoreAttack, label:s.title+' (attaque)'});
+    }
+    if(p.defense && typeof p.atDefense === 'number' && typeof p.scoreDefense === 'number'){
+      points.push({at:p.atDefense, score:p.scoreDefense, label:s.title+' (défense)'});
+    }
+  });
+  points.sort((a,b)=> a.at - b.at);
+
+  if(points.length < 2){
+    return `<div class="score-curve-empty">Pas encore assez de phases notées pour tracer une courbe — reviens ici après quelques scénarios.</div>`;
+  }
+
+  const W = 640, H = 170, padL = 34, padR = 14, padT = 14, padB = 24;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const n = points.length;
+  const x = i => padL + (n===1 ? innerW/2 : (innerW * i/(n-1)));
+  const y = v => padT + innerH - (Math.max(0,Math.min(1000,v))/1000)*innerH;
+
+  const linePts = points.map((p,i)=> x(i).toFixed(1)+','+y(p.score).toFixed(1)).join(' ');
+  const dots = points.map((p,i)=>
+    `<circle class="score-curve-dot" cx="${x(i).toFixed(1)}" cy="${y(p.score).toFixed(1)}" r="3.2"><title>${escapeHtml(p.label)} — ${p.score} pts</title></circle>`
+  ).join('');
+  const gridLines = [0,250,500,750,1000].map(v=>
+    `<line class="score-curve-grid" x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W-padR}" y2="${y(v).toFixed(1)}"/>`+
+    `<text class="score-curve-axis" x="${padL-6}" y="${(y(v)+3).toFixed(1)}" text-anchor="end">${v}</text>`
+  ).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="score-curve-svg" role="img" aria-label="Courbe de score dans le temps">
+    ${gridLines}
+    <polyline class="score-curve-line" points="${linePts}"/>
+    ${dots}
   </svg>`;
 }
 
@@ -687,13 +804,49 @@ function renderDashboard(){
 
   famEl.innerHTML = withF.map(({f,st})=>{
     const pct = Math.round(st.securedPct*100);
+    const timeTxt = st.avgTimeSec!==null ? formatDuration(st.avgTimeSec)+' en moyenne' : 'pas encore joué';
+    const hintTxt = st.hintRate!==null ? Math.round(st.hintRate*100)+'% des phases avec indice' : '';
     return `<div class="dfam-card">
       <div class="dfam-head"><span class="dfam-icon">${f.icon}</span><span class="dfam-name">${f.name}</span><span class="dfam-rank" style="color:${f.color}">${rank(st.securedPct)}</span></div>
       <div class="dfam-bar"><div class="dfam-fill" style="width:${pct}%;background:${f.color}"></div></div>
       <div class="dfam-sub">${st.secured}/${st.total} sécurisés · ${st.attacked}/${st.total} compromis</div>
+      <div class="dfam-sub dfam-sub-2">⏱ ${timeTxt}${hintTxt ? ' · 💡 '+hintTxt : ''}</div>
     </div>`;
   }).join('');
+
+  const curveEl = document.getElementById('dash-score-curve');
+  if(curveEl) curveEl.innerHTML = buildScoreCurve();
+
+  renderRevanchePanel();
 }
+
+function renderRevanchePanel(){
+  const el = document.getElementById('dash-revanche');
+  if(!el) return;
+  const rows = strugglingScenarios(5);
+  if(!rows.length){
+    el.innerHTML = `<div class="drev-empty">Aucun point faible identifié pour l'instant — les scénarios bouclés sans indice ni retard n'ont pas besoin de revanche.</div>`;
+    return;
+  }
+  el.innerHTML = rows.map(r=>`
+    <div class="drev-card">
+      <div class="drev-info">
+        <div class="drev-title">${escapeHtml(r.scenario.title)}</div>
+        <div class="drev-meta">${escapeHtml(r.scenario.category)} · ${Math.round(r.avgScore)} pts en moyenne${r.hints>0 ? ' · '+r.hints+' indice(s) utilisé(s)' : ''}</div>
+      </div>
+      <div class="drev-actions">
+        <button class="ghost drev-btn" data-revanche-attack="${r.index}" title="Rejoue la phase d'attaque en bac à sable, sans affecter le score enregistré">⚔️ Revanche attaque</button>
+        <button class="ghost drev-btn" data-revanche-defense="${r.index}" title="Rejoue la phase de défense, sans affecter le score enregistré">🛡️ Revanche défense</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-revanche-attack]').forEach(btn=>{
+    btn.addEventListener('click', ()=> startSandboxChallenge(parseInt(btn.dataset.revancheAttack,10)));
+  });
+  el.querySelectorAll('[data-revanche-defense]').forEach(btn=>{
+    btn.addEventListener('click', ()=> startDefenseRevanche(parseInt(btn.dataset.revancheDefense,10)));
+  });
+}
+window.renderRevanchePanel = renderRevanchePanel;
 window.renderDashboard = renderDashboard;
 
 /* ---------- Chaînes d'attaque (scénarios multi-étapes) ---------- */
