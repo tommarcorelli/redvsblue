@@ -31,7 +31,8 @@ const NETWORK_CLUSTERS = [
          'graphql-introspection-privilege-leak','cors-reflected-origin-credentials'] },
   { name:'Active Directory / Windows', color:'#7cb3ff',
     ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation',
-         'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin'] }
+         'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin',
+         'ad-silver-ticket-forgery','ad-acl-genericall-privesc'] }
 ];
 
 function netmapNodeStatus(i){

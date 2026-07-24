@@ -356,7 +356,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — champ resetToken non protégé révélé par l'introspection GraphQL en production, et API reflétant n'importe quelle origine avec les identifiants autorisés (vol de données cross-site) — total : 55 scénarios, famille « Applications web » portée de 9 à 11." },
   { version:'v3.8', tag:'attaque', tagColor:'var(--blue)', done:true,
     title:'Pack « réseau », 2ᵉ vague — LLMNR/NBT-NS & relais NTLM',
-    desc:"2 scénarios ajoutés — capture d'un challenge-response NetNTLMv2 par empoisonnement LLMNR/NBT-NS puis cassage hors-ligne, et relais direct d'une authentification NTLM interceptée vers un serveur sans signature SMB obligatoire — total : 57 scénarios, famille « Réseau & annuaires » portée de 7 à 9." }
+    desc:"2 scénarios ajoutés — capture d'un challenge-response NetNTLMv2 par empoisonnement LLMNR/NBT-NS puis cassage hors-ligne, et relais direct d'une authentification NTLM interceptée vers un serveur sans signature SMB obligatoire — total : 57 scénarios, famille « Réseau & annuaires » portée de 7 à 9." },
+  { version:'v3.9', tag:'attaque', tagColor:'var(--red)', done:true,
+    title:'Pack « Active Directory », 3ᵉ vague — Silver Ticket & abus d\'ACL GenericAll',
+    desc:"2 scénarios ajoutés — ticket de service forgé localement à partir d'un seul hash NTLM, sans jamais contacter le contrôleur de domaine (Silver Ticket), et délégation ACL oubliée accordant GenericAll sur un compte administrateur du domaine — total : 59 scénarios, famille « Active Directory / Windows » portée de 7 à 9." }
 ];
 
 function renderRoadmap(){

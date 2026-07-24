@@ -656,7 +656,7 @@ const SKILL_FAMILIES = [
   { name:'Web & API', icon:'🕸️', color:'var(--red)', ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce','python-pickle-deserialization','ssti-jinja2-flask','idor-invoice-api','mass-assignment-signup','excessive-data-exposure-api','missing-rate-limit-bruteforce','graphql-introspection-privilege-leak','cors-reflected-origin-credentials'] },
   { name:'Cloud & IaC', icon:'☁️', color:'var(--gold)', ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open','iam-role-overpermissive','secret-in-public-repo','oauth-token-overscope','github-actions-secret-leak','dependency-confusion-pip'] },
   { name:'Conteneurs', icon:'📦', color:'var(--purple)', ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated','k8s-rbac-clusterrolebinding-overpermissive','docker-pid-host-ptrace-injection','k8s-missing-networkpolicy-lateral-movement','k8s-etcd-unauthenticated','docker-cgroup-release-agent-escape'] },
-  { name:'Active Directory / Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation','ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin'] }
+  { name:'Active Directory / Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation','ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin','ad-silver-ticket-forgery','ad-acl-genericall-privesc'] }
 ];
 
 function familyStat(fam){
