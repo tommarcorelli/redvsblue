@@ -362,7 +362,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — ticket de service forgé localement à partir d'un seul hash NTLM, sans jamais contacter le contrôleur de domaine (Silver Ticket), et délégation ACL oubliée accordant GenericAll sur un compte administrateur du domaine — total : 59 scénarios, famille « Active Directory / Windows » portée de 7 à 9." },
   { version:'v4.0', tag:'attaque', tagColor:'var(--green)', done:true,
     title:'Pack « cloud », 2ᵉ vague — chaîne d\'approvisionnement Terraform & politique de ressource publique',
-    desc:"2 scénarios ajoutés — module Terraform référencé par une branche mouvante permettant l'exécution d'un provisioner arbitraire par le pipeline CI, et secret cloud lisible depuis n'importe quel compte via une politique de ressource sans restriction de principal — total : 61 scénarios, famille « Cloud & Infrastructure as Code » portée de 9 à 11." }
+    desc:"2 scénarios ajoutés — module Terraform référencé par une branche mouvante permettant l'exécution d'un provisioner arbitraire par le pipeline CI, et secret cloud lisible depuis n'importe quel compte via une politique de ressource sans restriction de principal — total : 61 scénarios, famille « Cloud & Infrastructure as Code » portée de 9 à 11." },
+  { version:'v4.1', tag:'attaque', tagColor:'var(--gold)', done:true,
+    title:'Pack « conteneurs », 3ᵉ vague — secret en clair via pods/exec & API Docker distante',
+    desc:"2 scénarios ajoutés — mot de passe injecté en variable d'environnement lisible avec le seul droit pods/exec, et démon Docker distant sans authentification TLS permettant de monter le système de fichiers hôte dans un conteneur (accès root instantané sur l'hôte) — total : 63 scénarios, famille « Conteneurs & orchestration » portée de 8 à 10." }
 ];
 
 function renderRoadmap(){

