@@ -5026,6 +5026,160 @@ const SCENARIOS = [
     log.push({t:"[+] Commande exécutée comme root sur l'hôte via l'API Docker distante.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 64. Chaîne de communauté SNMP par défaut ===================== */
+{
+  id:'snmp-default-community-string',
+  title:'La chaîne de communauté SNMP par défaut expose la configuration complète du routeur core',
+  category:'Réseau & annuaires (SNMP, chaîne de communauté par défaut)',
+  attack:{
+    who:'Vous incarnez bob, disposant d\'un simple accès réseau au routeur core `10.0.0.1` de target-lab, sans le moindre identifiant.',
+    desc:"Le routeur core répond encore à la chaîne de communauté SNMP par défaut `public` en lecture, sur SNMPv2c (sans authentification par utilisateur, contrairement à SNMPv3). N'importe qui peut donc interroger l'intégralité de sa configuration — y compris des OID propriétaires du constructeur qui révèlent en clair le secret partagé RADIUS utilisé pour l'authentification réseau.",
+    hints:[
+      "`snmpwalk -v2c -c public 10.0.0.1 system` confirme que le routeur répond à la chaîne de communauté par défaut, sans le moindre identifiant.",
+      "SNMPv2c n'authentifie jamais l'appelant individuellement : la seule chose qui protège l'appareil est la chaîne de communauté elle-même — et `public` est la valeur par défaut de la quasi-totalité des équipements réseau.",
+      "`snmpwalk -v2c -c public 10.0.0.1 .1.3.6.1.4.1.9.9.96.1.1.1.1.14` (OID propriétaire du constructeur) révèle le secret partagé RADIUS configuré sur l'appareil, stocké en clair dans cette branche."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur réseau chargé de corriger la faille.',
+    desc:"Remplacez la chaîne de communauté par une valeur non devinable et migrez vers SNMPv3, qui authentifie individuellement chaque appelant plutôt que de reposer sur un secret partagé unique.",
+    hints:[
+      "Éditez `/etc/network/snmp-config.yml` avec `nano` et remplacez `community: public` par une valeur aléatoire, puis passez `version` de `v2c` à `v3`.",
+      "`verify` confirme que le routeur n'accepte plus la chaîne de communauté par défaut et n'utilise plus SNMPv2c."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['network']},
+      '/etc/network':{type:'dir',perm:'755',owner:'root',children:['snmp-config.yml']},
+      '/etc/network/snmp-config.yml':{type:'file',perm:'644',owner:'root',size:50,
+        content:"community: public\nversion: v2c\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^snmpwalk\s+-v2c\s+-c\s+public\s+10\.0\.0\.1\s+system$/, run(state, print){
+        const vuln = /community:\s*public/.test(state.vfs['/etc/network/snmp-config.yml'].content)
+                  && /version:\s*v2c/.test(state.vfs['/etc/network/snmp-config.yml'].content);
+        if(!vuln){ print('Timeout: No Response from 10.0.0.1', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.enumerated = true;
+        print('SNMPv2-MIB::sysDescr.0 = STRING: Cisco IOS Software, Core Router', 'out');
+      }
+    },
+    { pattern:/^snmpwalk\s+-v2c\s+-c\s+public\s+10\.0\.0\.1\s+\.1\.3\.6\.1\.4\.1\.9\.9\.96\.1\.1\.1\.1\.14$/, run(state, print){
+        const vuln = /community:\s*public/.test(state.vfs['/etc/network/snmp-config.yml'].content)
+                  && /version:\s*v2c/.test(state.vfs['/etc/network/snmp-config.yml'].content);
+        if(!vuln){ print('Timeout: No Response from 10.0.0.1', 'err'); return; }
+        if(!state.flags || !state.flags.enumerated){ print('snmpwalk: énumérez d\'abord le système avant d\'interroger cette branche.', 'err'); return; }
+        state.flags.secretRevealed = true;
+        print('SNMPv2-SMI::enterprises.9.9.96.1.1.1.1.14.1 = STRING: "R@d1usSh@red2024"', 'ok');
+        print("[+] Secret partagé RADIUS révélé en clair via une OID propriétaire du constructeur.", 'ok');
+        print("FLAG{snmp_default_community_string_radius_secret}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.secretRevealed === true; },
+  defenseCheck(state){
+    return !/community:\s*public/.test(state.vfs['/etc/network/snmp-config.yml'].content)
+        && /version:\s*v3/.test(state.vfs['/etc/network/snmp-config.yml'].content);
+  },
+  replay(state){
+    const log=[];
+    const vuln = /community:\s*public/.test(state.vfs['/etc/network/snmp-config.yml'].content)
+              && /version:\s*v2c/.test(state.vfs['/etc/network/snmp-config.yml'].content);
+    log.push({t:'$ snmpwalk -v2c -c public 10.0.0.1 .1.3.6.1.4.1.9.9.96.1.1.1.1.14', cls:'prompt-line'});
+    if(!vuln){
+      log.push({t:'Timeout: No Response from 10.0.0.1', cls:'err'});
+      log.push({t:"[-] La chaîne de communauté par défaut n'est plus acceptée, SNMPv3 est en place : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'SNMPv2-SMI::enterprises.9.9.96.1.1.1.1.14.1 = STRING: "R@d1usSh@red2024"', cls:'ok'});
+    log.push({t:"[+] Secret partagé RADIUS révélé en clair via SNMP.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 65. Module rsync anonyme exposant les sauvegardes ===================== */
+{
+  id:'rsync-anonymous-module-exposure',
+  title:'Un module rsync accessible sans authentification expose une clé SSH de déploiement',
+  category:'Réseau & annuaires (module rsync anonyme)',
+  attack:{
+    who:'Vous incarnez bob, disposant d\'un simple accès réseau au service rsync du serveur de sauvegarde `backup01`.',
+    desc:"Le module rsync `backup` ne définit aucun `auth users` dans sa configuration : il est accessible sans authentification, en lecture. N'importe qui peut donc lister et télécharger l'intégralité des archives de sauvegarde — qui contiennent notamment une clé privée SSH non chiffrée utilisée pour l'automatisation des déploiements.",
+    hints:[
+      "`rsync rsync://backup01/backup/` liste le contenu du module sans authentification : un fichier `deploy_key` (clé privée SSH) y apparaît, aux côtés des archives habituelles.",
+      "`rsync rsync://backup01/backup/deploy_key ./deploy_key` télécharge directement cette clé privée, sans le moindre identifiant — le module ne définit aucun `auth users`.",
+      "`ssh -i deploy_key deploy@app01.lab.local` utilise la clé récupérée pour se connecter au serveur applicatif en tant que compte de déploiement automatisé."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur infrastructure chargé de corriger la faille.',
+    desc:"Exigez une authentification sur le module rsync `backup`, pour qu'il ne soit plus accessible qu'à des comptes explicitement autorisés.",
+    hints:[
+      "Éditez `/etc/network/rsyncd.conf` avec `nano` et ajoutez une ligne `auth users = backupadmin` sous la section `[backup]`.",
+      "`verify` confirme que le module `backup` exige désormais une authentification."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['network']},
+      '/etc/network':{type:'dir',perm:'755',owner:'root',children:['rsyncd.conf']},
+      '/etc/network/rsyncd.conf':{type:'file',perm:'644',owner:'root',size:70,
+        content:"[backup]\n  path = /srv/backup\n  read only = yes\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^rsync\s+rsync:\/\/backup01\/backup\/$/, run(state, print){
+        const open = !/auth users/.test(state.vfs['/etc/network/rsyncd.conf'].content);
+        if(!open){ print('@ERROR: auth failed on module backup', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.listed = true;
+        print('drwxr-xr-x          4096 2024/03/01 02:00:00 .\n-rw-------          1834 2024/03/01 02:00:00 deploy_key\n-rw-r--r--    4829301248 2024/03/01 02:00:00 db-2024-03-01.tar.gz', 'out');
+      }
+    },
+    { pattern:/^rsync\s+rsync:\/\/backup01\/backup\/deploy_key\s+\.\/deploy_key$/, run(state, print){
+        const open = !/auth users/.test(state.vfs['/etc/network/rsyncd.conf'].content);
+        if(!open){ print('@ERROR: auth failed on module backup', 'err'); return; }
+        if(!state.flags || !state.flags.listed){ print('rsync: listez d\'abord le contenu du module.', 'err'); return; }
+        state.flags.keyDownloaded = true;
+        print('deploy_key\n\nsent 43 bytes  received 1,952 bytes  1,330.00 bytes/sec\ntotal size is 1,834  speedup is 0.92', 'ok');
+      }
+    },
+    { pattern:/^ssh\s+-i\s+deploy_key\s+deploy@app01\.lab\.local$/, run(state, print){
+        if(!state.flags || !state.flags.keyDownloaded){ print('ssh: aucune clé deploy_key locale — téléchargez-la d\'abord.', 'err'); return; }
+        state.flags.compromised = true;
+        print('Welcome to app01.lab.local — deploy@app01:~$', 'ok');
+        print("[+] Connexion établie sur app01 avec la clé de déploiement, jamais protégée par authentification côté rsync.", 'ok');
+        print("FLAG{rsync_anonymous_module_deploy_key_exposure}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.compromised === true; },
+  defenseCheck(state){ return /auth users/.test(state.vfs['/etc/network/rsyncd.conf'].content); },
+  replay(state){
+    const log=[];
+    const open = !/auth users/.test(state.vfs['/etc/network/rsyncd.conf'].content);
+    log.push({t:'$ rsync rsync://backup01/backup/deploy_key ./deploy_key', cls:'prompt-line'});
+    if(!open){
+      log.push({t:'@ERROR: auth failed on module backup', cls:'err'});
+      log.push({t:"[-] Le module backup exige désormais une authentification : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'deploy_key\n\nsent 43 bytes  received 1,952 bytes ...', cls:'ok'});
+    log.push({t:"[+] Clé de déploiement téléchargée sans authentification, accès app01 obtenu.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];
