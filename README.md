@@ -29,7 +29,7 @@ Aucune installation n'est nécessaire.
 
 ## ✨ Fonctionnalités
 
-- **65 scénarios attaque/défense** couvrant 6 grandes familles techniques :
+- **67 scénarios attaque/défense** couvrant 6 grandes familles techniques :
   élévation de privilèges Linux, réseau & annuaires (dont Memcached,
   session nulle SMB, empoisonnement LLMNR/NBT-NS, relais NTLM faute
   de signature SMB, chaîne de communauté SNMP par défaut et module
@@ -44,7 +44,8 @@ Aucune installation n'est nécessaire.
   introspection GraphQL non protégée et CORS mal configuré), et
   Active Directory / Windows (AS-REP Roasting, délégation Kerberos,
   DCSync, GPO, Kerberoasting, Pass-the-Hash, Silver Ticket, abus d'ACL
-  GenericAll).
+  GenericAll, abus de délégation contrainte S4U2Proxy et mot de passe
+  GPP cpassword laissé dans SYSVOL).
 - **Scénarios chaînés** : mouvement latéral réel sur plusieurs machines
   (clé SSH oubliée → pivot interne → identifiants trouvés → pivot final).
 - **Bac à sable** : système et faille tirés au hasard, sans script guidé,
@@ -84,7 +85,7 @@ duel.html            Page dédiée au mode duel (deux terminaux synchronisés)
 manifest.json / sw.js  PWA (installation + cache hors-ligne)
 css/style.css         Tout le style du projet
 js/
-  scenarios.js         Les 65 scénarios (vfs, règles d'exploit, correctifs)
+  scenarios.js         Les 67 scénarios (vfs, règles d'exploit, correctifs)
   chains.js            Les scénarios chaînés multi-machines
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense

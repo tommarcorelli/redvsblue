@@ -34,7 +34,8 @@ const NETWORK_CLUSTERS = [
   { name:'Active Directory / Windows', color:'#7cb3ff',
     ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation',
          'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin',
-         'ad-silver-ticket-forgery','ad-acl-genericall-privesc'] }
+         'ad-silver-ticket-forgery','ad-acl-genericall-privesc',
+         'ad-constrained-delegation-s4u2proxy-abuse','ad-gpp-cpassword-sysvol'] }
 ];
 
 function netmapNodeStatus(i){

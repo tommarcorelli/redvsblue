@@ -368,7 +368,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — mot de passe injecté en variable d'environnement lisible avec le seul droit pods/exec, et démon Docker distant sans authentification TLS permettant de monter le système de fichiers hôte dans un conteneur (accès root instantané sur l'hôte) — total : 63 scénarios, famille « Conteneurs & orchestration » portée de 8 à 10." },
   { version:'v4.2', tag:'attaque', tagColor:'var(--blue)', done:true,
     title:'Pack « réseau », 3ᵉ vague — SNMP par défaut & module rsync anonyme',
-    desc:"2 scénarios ajoutés — secret partagé RADIUS révélé en clair via une chaîne de communauté SNMP par défaut, et clé privée SSH de déploiement exposée par un module rsync sans authentification — total : 65 scénarios, famille « Réseau & annuaires » portée de 9 à 11." }
+    desc:"2 scénarios ajoutés — secret partagé RADIUS révélé en clair via une chaîne de communauté SNMP par défaut, et clé privée SSH de déploiement exposée par un module rsync sans authentification — total : 65 scénarios, famille « Réseau & annuaires » portée de 9 à 11." },
+  { version:'v4.3', tag:'attaque', tagColor:'var(--red)', done:true,
+    title:'Pack « Active Directory », 4ᵉ vague — délégation contrainte S4U2Proxy & GPP cpassword',
+    desc:"2 scénarios ajoutés — usurpation d'un administrateur via S4U2Self puis S4U2Proxy malgré une délégation contrainte à un seul SPN, et mot de passe GPP cpassword laissé dans SYSVOL, déchiffrable instantanément avec la clé AES publiée par Microsoft en 2012 — total : 67 scénarios, famille « Active Directory / Windows » portée de 9 à 11." }
 ];
 
 function renderRoadmap(){

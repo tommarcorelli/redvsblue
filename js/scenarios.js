@@ -5180,6 +5180,171 @@ const SCENARIOS = [
     log.push({t:"[+] Clé de déploiement téléchargée sans authentification, accès app01 obtenu.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 66. Abus de la délégation contrainte (S4U2Self/S4U2Proxy) ===================== */
+{
+  id:'ad-constrained-delegation-s4u2proxy-abuse',
+  title:'La délégation contrainte du compte svc-app permet d\'usurper l\'administrateur vers le service autorisé',
+  category:'Active Directory (délégation contrainte, S4U2Proxy)',
+  attack:{
+    who:'Vous incarnez bob, qui contrôlez déjà le compte de service `svc-app` (compromis par un autre moyen, hors périmètre de ce scénario).',
+    desc:"`svc-app` est configuré en délégation contrainte avec transition de protocole vers le seul SPN `CIFS/fileserver03.lab.local` — pensé pour ne lui permettre d'agir que sur ce partage précis, au nom d'un utilisateur authentifié. Mais rien n'empêche `svc-app` de demander, via S4U2Self, un ticket comme s'il s'agissait d'un tout autre utilisateur — y compris l'administrateur — sans jamais connaître son mot de passe, puis d'échanger ce ticket via S4U2Proxy contre un accès complet à ce service autorisé.",
+    hints:[
+      "`s4u2self --user svc-app --impersonate Administrateur` demande, via Service-for-User-to-Self, un ticket comme si `Administrateur` s'était authentifié directement auprès de `svc-app` — sans jamais avoir besoin de son mot de passe, la transition de protocole étant activée sur ce compte de service.",
+      "`s4u2proxy --user svc-app --impersonate Administrateur --service CIFS/fileserver03.lab.local` échange ce ticket contre un accès au SPN précis auquel `svc-app` est autorisé à déléguer — la restriction ne protège que le service ciblé, pas l'identité usurpée.",
+      "`dir \\\\fileserver03\\C$` (le ticket obtenu étant injecté dans le cache Kerberos local) donne un accès administrateur complet au partage C$ de fileserver03, en usurpant l'identité d'Administrateur sans jamais avoir connu son mot de passe."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Marquez le compte `Administrateur` comme « sensible et ne pouvant pas être délégué » : ce marqueur empêche tout compte de service, quelle que soit sa délégation contrainte, de l'usurper via S4U2Proxy.",
+    hints:[
+      "Éditez `/etc/ad/users/administrateur.json` avec `nano` et passez `sensitiveCannotBeDelegated` à `true`.",
+      "`verify` confirme que le compte Administrateur ne peut désormais plus être délégué par aucun compte de service."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['users']},
+      '/etc/ad/users':{type:'dir',perm:'755',owner:'root',children:['administrateur.json']},
+      '/etc/ad/users/administrateur.json':{type:'file',perm:'644',owner:'root',size:90,
+        content:"{\n  \"sAMAccountName\": \"Administrateur\",\n  \"sensitiveCannotBeDelegated\": false\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^s4u2self\s+--user\s+svc-app\s+--impersonate\s+Administrateur$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.s4u2selfDone = true;
+        print("[+] Ticket S4U2Self obtenu : svc-app peut désormais agir comme Administrateur sans connaître son mot de passe.", 'ok');
+      }
+    },
+    { pattern:/^s4u2proxy\s+--user\s+svc-app\s+--impersonate\s+Administrateur\s+--service\s+CIFS\/fileserver03\.lab\.local$/, run(state, print){
+        if(!state.flags || !state.flags.s4u2selfDone){ print('s4u2proxy: aucun ticket S4U2Self en cache — obtenez-le d\'abord.', 'err'); return; }
+        const protected_ = /"sensitiveCannotBeDelegated":\s*true/.test(state.vfs['/etc/ad/users/administrateur.json'].content);
+        if(protected_){ print("KDC_ERR_BADOPTION : le compte Administrateur est marqué non délégable.", 'err'); return; }
+        state.flags.ticketProxied = true;
+        print("[+] Ticket de service CIFS/fileserver03.lab.local obtenu, usurpant Administrateur.", 'ok');
+      }
+    },
+    { pattern:/^dir\s+\\\\fileserver03\\C\$$/, run(state, print){
+        if(!state.flags || !state.flags.ticketProxied){ print('Accès refusé : aucun ticket valide pour ce partage.', 'err'); return; }
+        state.flags.compromised = true;
+        print(' Répertoire de \\\\fileserver03\\C$\n\n Windows\n Program Files\n Users', 'ok');
+        print("[+] Accès administrateur complet sur fileserver03, en usurpant Administrateur via la délégation contrainte de svc-app.", 'ok');
+        print("FLAG{ad_constrained_delegation_s4u2proxy_abuse}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.compromised === true; },
+  defenseCheck(state){ return /"sensitiveCannotBeDelegated":\s*true/.test(state.vfs['/etc/ad/users/administrateur.json'].content); },
+  replay(state){
+    const log=[];
+    const protected_ = /"sensitiveCannotBeDelegated":\s*true/.test(state.vfs['/etc/ad/users/administrateur.json'].content);
+    log.push({t:'$ s4u2proxy --user svc-app --impersonate Administrateur --service CIFS/fileserver03.lab.local', cls:'prompt-line'});
+    if(protected_){
+      log.push({t:'KDC_ERR_BADOPTION : le compte Administrateur est marqué non délégable.', cls:'err'});
+      log.push({t:"[-] Administrateur ne peut plus être délégué : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Accès administrateur complet obtenu sur fileserver03 en usurpant Administrateur.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 67. Mot de passe GPP (cpassword) laissé dans SYSVOL ===================== */
+{
+  id:'ad-gpp-cpassword-sysvol',
+  title:'Un mot de passe GPP oublié dans SYSVOL se déchiffre instantanément avec la clé publiée par Microsoft',
+  category:'Active Directory (GPP cpassword, SYSVOL)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur standard du domaine, avec le simple accès en lecture à SYSVOL dont bénéficie par défaut tout utilisateur authentifié.',
+    desc:"Une ancienne stratégie de groupe (Group Policy Preferences), utilisée autrefois pour pousser un mot de passe administrateur local identique sur les postes, a laissé un fichier `Groups.xml` dans SYSVOL. Son attribut `cpassword` est chiffré en AES-256 — mais Microsoft a publié la clé fixe utilisée par cette fonctionnalité en 2012 (MS14-025) : n'importe qui peut donc le déchiffrer instantanément.",
+    hints:[
+      "`find //dc01/SYSVOL -name Groups.xml` localise ce fichier de préférences hérité, lisible par défaut par tout utilisateur authentifié du domaine sur SYSVOL.",
+      "`cat \"//dc01/SYSVOL/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml\"` révèle un attribut `cpassword` pour un compte administrateur local.",
+      "`gpp-decrypt j1Uyj3Vx8TY9LtLZil5EmQr8xj4TdcnLXBSDCbSJdcv` déchiffre instantanément cette valeur avec la clé AES fixe publiée par Microsoft en 2012 — le chiffrement ne dépend d'aucun secret propre au domaine.",
+      "`net use \\\\wks-012\\C$ /user:Administrateur <mot_de_passe_déchiffré>` confirme un accès administrateur local sur un poste ayant reçu cette stratégie de groupe, le même mot de passe étant réutilisé sur l'ensemble des postes concernés."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Supprimez cette stratégie de groupe héritée (et rotez le mot de passe qu'elle a diffusé sur tous les postes concernés) : `cpassword` ne doit plus jamais apparaître dans SYSVOL, quelle que soit la clé de chiffrement utilisée.",
+    hints:[
+      "Éditez `/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml` avec `nano` et supprimez entièrement l'attribut `cpassword=\"...\"`.",
+      "`verify` confirme qu'aucun mot de passe GPP ne subsiste dans SYSVOL."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','var']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/var':{type:'dir',perm:'755',owner:'root',children:['sysvol']},
+      '/var/sysvol':{type:'dir',perm:'755',owner:'root',children:['lab.local']},
+      '/var/sysvol/lab.local':{type:'dir',perm:'755',owner:'root',children:['Policies']},
+      '/var/sysvol/lab.local/Policies':{type:'dir',perm:'755',owner:'root',children:['{31B2F340-016D-11D2-945F-00C04FB984F9}']},
+      '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}':{type:'dir',perm:'755',owner:'root',children:['Machine']},
+      '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine':{type:'dir',perm:'755',owner:'root',children:['Preferences']},
+      '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences':{type:'dir',perm:'755',owner:'root',children:['Groups']},
+      '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups':{type:'dir',perm:'755',owner:'root',children:['Groups.xml']},
+      '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml':{type:'file',perm:'644',owner:'root',size:220,
+        content:"<Groups><User name=\"Administrateur (local)\" cpassword=\"j1Uyj3Vx8TY9LtLZil5EmQr8xj4TdcnLXBSDCbSJdcv\" changed=\"2019-03-11\"/></Groups>\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^find\s+\/\/dc01\/SYSVOL\s+-name\s+Groups\.xml$/, run(state, print){
+        const path = '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml';
+        const present = /cpassword=/.test(state.vfs[path].content);
+        if(!present){ print('(aucun résultat)', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.fileFound = true;
+        print('//dc01/SYSVOL/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml', 'out');
+      }
+    },
+    { pattern:/^cat\s+"\/\/dc01\/SYSVOL\/lab\.local\/Policies\/\{31B2F340-016D-11D2-945F-00C04FB984F9\}\/Machine\/Preferences\/Groups\/Groups\.xml"$/, run(state, print){
+        const path = '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml';
+        if(!state.flags || !state.flags.fileFound){ print('cat: fichier introuvable — localisez-le d\'abord.', 'err'); return; }
+        const present = /cpassword=/.test(state.vfs[path].content);
+        if(!present){ print('cat: fichier introuvable.', 'err'); return; }
+        state.flags.cpasswordSeen = true;
+        print(state.vfs[path].content, 'out');
+      }
+    },
+    { pattern:/^gpp-decrypt\s+j1Uyj3Vx8TY9LtLZil5EmQr8xj4TdcnLXBSDCbSJdcv$/, run(state, print){
+        if(!state.flags || !state.flags.cpasswordSeen){ print('gpp-decrypt: aucune valeur cpassword fournie — lisez d\'abord le fichier.', 'err'); return; }
+        state.flags.decrypted = true;
+        print('Adm1nLocal2019!', 'ok');
+        print("[+] Mot de passe déchiffré instantanément avec la clé AES fixe publiée par Microsoft (MS14-025).", 'ok');
+        print("FLAG{ad_gpp_cpassword_sysvol_ms14_025}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.decrypted === true; },
+  defenseCheck(state){
+    const path = '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml';
+    return !/cpassword=/.test(state.vfs[path].content);
+  },
+  replay(state){
+    const log=[];
+    const path = '/var/sysvol/lab.local/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/Machine/Preferences/Groups/Groups.xml';
+    const present = /cpassword=/.test(state.vfs[path].content);
+    log.push({t:'$ gpp-decrypt j1Uyj3Vx8TY9LtLZil5EmQr8xj4TdcnLXBSDCbSJdcv', cls:'prompt-line'});
+    if(!present){
+      log.push({t:'gpp-decrypt: aucune valeur cpassword trouvée dans SYSVOL.', cls:'err'});
+      log.push({t:"[-] La stratégie de groupe héritée a été supprimée de SYSVOL : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'Adm1nLocal2019!', cls:'ok'});
+    log.push({t:"[+] Mot de passe GPP déchiffré instantanément avec la clé AES fixe publiée par Microsoft.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'redvsblue-cache-v32';
+const CACHE_NAME = 'redvsblue-cache-v33';
 const ASSETS = [
   './',
   './index.html',
