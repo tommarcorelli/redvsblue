@@ -16,6 +16,10 @@ document.getElementById('btn-reset-all').addEventListener('click', ()=>{
 
 document.getElementById('btn-briefing-back').addEventListener('click', goHome);
 document.getElementById('btn-briefing-launch').addEventListener('click', launchGame);
+document.getElementById('btn-briefing-factsheet').addEventListener('click', ()=>{
+  if(!pendingMission) return;
+  openFactsheet(SCENARIOS[pendingMission.index].id);
+});
 
 document.getElementById('brand-home-link').addEventListener('click', goHome);
 document.getElementById('btn-menu').addEventListener('click', goHome);

@@ -215,6 +215,8 @@ button.big.primary{background:var(--gold);border:none;color:#1a1400;}
 button.big.primary:hover{filter:brightness(1.08);}
 button.big.secondary{background:transparent;border:1px solid var(--line);color:var(--text-dim);}
 button.big.secondary:hover{border-color:var(--red);color:var(--red);}
+button.big.ghost{background:transparent;border:1px solid var(--line);color:var(--gold);font-size:14px;padding:12px 26px;}
+button.big.ghost:hover{border-color:var(--gold);filter:brightness(1.15);}
 
 /* Focus clavier cohérent */
 button:focus-visible, .home-tab:focus-visible, input:focus-visible{

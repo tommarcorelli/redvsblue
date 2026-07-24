@@ -1,4 +1,4 @@
-const CACHE_NAME = 'redvsblue-cache-v33';
+const CACHE_NAME = 'redvsblue-cache-v34';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/scenarios.js',
   './js/chains.js',
   './js/progression.js',
+  './js/factsheets.js',
   './js/network-map.js',
   './js/engine.js',
   './js/ui.js',

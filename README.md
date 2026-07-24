@@ -61,6 +61,11 @@ Aucune installation n'est nécessaire.
   créer ses propres CTF.
 - **Mode Apprendre** : une leçon par scénario, pour comprendre la faille
   sans forcément la rejouer.
+- **Fiches techniques** : pour chacun des 67 scénarios, une fiche
+  imprimable/exportable en HTML autonome (bouton dédié sur l'écran de
+  briefing) qui rattache la faille à une référence réelle — CVE, technique
+  MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
+  la remédiation, réutilisées depuis les données du scénario.
 - **Mentor contextuel** : conseils socratiques par famille technique,
   jamais la commande exacte — pour s'entraîner à raisonner plutôt qu'à
   chercher un indice.
@@ -87,6 +92,8 @@ css/style.css         Tout le style du projet
 js/
   scenarios.js         Les 67 scénarios (vfs, règles d'exploit, correctifs)
   chains.js            Les scénarios chaînés multi-machines
+  factsheets.js         Fiches techniques imprimables (référence réelle par
+                        scénario : CVE, technique MITRE ATT&CK, incident)
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
   progression.js         Scoring, classement, succès, faille du jour,
