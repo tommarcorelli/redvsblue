@@ -22,7 +22,7 @@ const NETWORK_CLUSTERS = [
   { name:'Cloud & Infrastructure as Code', color:'var(--green)',
     ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open',
          'iam-role-overpermissive','secret-in-public-repo','oauth-token-overscope','github-actions-secret-leak',
-         'dependency-confusion-pip'] },
+         'dependency-confusion-pip','terraform-unpinned-module-supply-chain','cloud-secretsmanager-public-resource-policy'] },
   { name:'Applications web', color:'var(--purple)',
     ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce',
          'python-pickle-deserialization','ssti-jinja2-flask',

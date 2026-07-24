@@ -359,7 +359,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — capture d'un challenge-response NetNTLMv2 par empoisonnement LLMNR/NBT-NS puis cassage hors-ligne, et relais direct d'une authentification NTLM interceptée vers un serveur sans signature SMB obligatoire — total : 57 scénarios, famille « Réseau & annuaires » portée de 7 à 9." },
   { version:'v3.9', tag:'attaque', tagColor:'var(--red)', done:true,
     title:'Pack « Active Directory », 3ᵉ vague — Silver Ticket & abus d\'ACL GenericAll',
-    desc:"2 scénarios ajoutés — ticket de service forgé localement à partir d'un seul hash NTLM, sans jamais contacter le contrôleur de domaine (Silver Ticket), et délégation ACL oubliée accordant GenericAll sur un compte administrateur du domaine — total : 59 scénarios, famille « Active Directory / Windows » portée de 7 à 9." }
+    desc:"2 scénarios ajoutés — ticket de service forgé localement à partir d'un seul hash NTLM, sans jamais contacter le contrôleur de domaine (Silver Ticket), et délégation ACL oubliée accordant GenericAll sur un compte administrateur du domaine — total : 59 scénarios, famille « Active Directory / Windows » portée de 7 à 9." },
+  { version:'v4.0', tag:'attaque', tagColor:'var(--green)', done:true,
+    title:'Pack « cloud », 2ᵉ vague — chaîne d\'approvisionnement Terraform & politique de ressource publique',
+    desc:"2 scénarios ajoutés — module Terraform référencé par une branche mouvante permettant l'exécution d'un provisioner arbitraire par le pipeline CI, et secret cloud lisible depuis n'importe quel compte via une politique de ressource sans restriction de principal — total : 61 scénarios, famille « Cloud & Infrastructure as Code » portée de 9 à 11." }
 ];
 
 function renderRoadmap(){
