@@ -371,7 +371,9 @@ function renderAll(){
 function setVerdict(html){ verdictSlot.innerHTML = html; }
 
 function showDefenseReadyBanner(){
-  setVerdict(`<div class="verdict-banner blocked">La configuration semble durcie. Tapez <b>replay</b> pour vérifier que l'attaque est désormais bloquée.</div>`);
+  const scn = currentScenario();
+  const diffHtml = renderDiffPanel(scn, game);
+  setVerdict(`<div class="verdict-banner blocked">La configuration semble durcie. Tapez <b>replay</b> pour vérifier que l'attaque est désormais bloquée.</div>${diffHtml}`);
 }
 
 /* ---------- Terminal ---------- */

@@ -710,10 +710,11 @@ function dispatchBuiltin(cmd){
       if(game.phase !== 'defense'){ print("La commande 'replay' n'est disponible qu'en phase de défense.", 'err'); return; }
       const result = scn.replay(game);
       result.log.forEach(l=>print(l.t, l.cls));
+      const diffHtml = renderDiffPanel(scn, game);
       if(result.success){
-        setVerdict(`<div class="verdict-banner open">❌ ATTAQUE TOUJOURS POSSIBLE — la configuration doit être corrigée.</div>`);
+        setVerdict(`<div class="verdict-banner open">❌ ATTAQUE TOUJOURS POSSIBLE — la configuration doit être corrigée.</div>${diffHtml}`);
       } else {
-        setVerdict(`<div class="verdict-banner blocked">✅ ATTAQUE BLOQUÉE — le système résiste désormais à cette technique.</div>`);
+        setVerdict(`<div class="verdict-banner blocked">✅ ATTAQUE BLOQUÉE — le système résiste désormais à cette technique.</div>${diffHtml}`);
         if(!progress[scn.id].defense) completeDefense();
       }
       return;

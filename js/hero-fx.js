@@ -374,7 +374,10 @@ const ROADMAP = [
     desc:"2 scénarios ajoutés — usurpation d'un administrateur via S4U2Self puis S4U2Proxy malgré une délégation contrainte à un seul SPN, et mot de passe GPP cpassword laissé dans SYSVOL, déchiffrable instantanément avec la clé AES publiée par Microsoft en 2012 — total : 67 scénarios, famille « Active Directory / Windows » portée de 9 à 11." },
   { version:'v4.4', tag:'polish', tagColor:'var(--purple)', done:true,
     title:'Fiches techniques imprimables par scénario',
-    desc:"Nouveau bouton sur l'écran de briefing : une fiche HTML autonome, imprimable/exportable en PDF, rattachant chaque faille à une référence réelle (CVE, technique MITRE ATT&CK, outil ou incident documenté) — méthode d'attaque et remédiation entièrement réutilisées depuis les données déjà présentes du scénario." }
+    desc:"Nouveau bouton sur l'écran de briefing : une fiche HTML autonome, imprimable/exportable en PDF, rattachant chaque faille à une référence réelle (CVE, technique MITRE ATT&CK, outil ou incident documenté) — méthode d'attaque et remédiation entièrement réutilisées depuis les données déjà présentes du scénario." },
+  { version:'v4.5', tag:'polish', tagColor:'var(--blue)', done:true,
+    title:'Vue diff avant/après correctif',
+    desc:"`verify` et `replay` affichent désormais un panneau repliable comparant ligne à ligne le fichier de configuration d'origine à son état actuel, façon git diff — pour voir concrètement ce que le correctif a changé, même quand la faille n'est pas encore corrigée." }
 ];
 
 function renderRoadmap(){

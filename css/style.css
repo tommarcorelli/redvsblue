@@ -539,6 +539,28 @@ textarea#nano-area{
 .verdict-banner.blocked{background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);}
 .verdict-banner.open{background:var(--red-dim);color:var(--red);border:1px solid var(--red);}
 
+/* Vue diff avant/après correctif */
+.diff-panel{
+  margin-top:10px;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg-panel);
+}
+.diff-panel summary{
+  padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--text-dim);cursor:pointer;
+  list-style:none;user-select:none;
+}
+.diff-panel summary::-webkit-details-marker{display:none;}
+.diff-panel summary:hover{color:var(--gold);}
+.diff-panel[open] summary{border-bottom:1px solid var(--line);}
+.diff-file{border-top:1px solid var(--line);}
+.diff-file:first-of-type{border-top:none;}
+.diff-file-path{padding:6px 12px;font-family:var(--mono);font-size:11.5px;color:var(--text-dim);background:rgba(255,255,255,.02);}
+.diff-body{font-family:var(--mono);font-size:12px;line-height:1.6;max-height:260px;overflow:auto;}
+.diff-row{display:flex;padding:0 12px;white-space:pre-wrap;word-break:break-all;}
+.diff-marker{width:16px;flex-shrink:0;opacity:.7;}
+.diff-text{flex:1;}
+.diff-row.diff-eq{color:var(--text-dim);}
+.diff-row.diff-add{background:rgba(61,220,132,.12);color:var(--green);}
+.diff-row.diff-del{background:rgba(255,59,92,.12);color:var(--red);text-decoration:line-through;text-decoration-color:rgba(255,59,92,.4);}
+
 /* ============================================================
    v0.4 — HUD score / chrono (écran de jeu)
    ============================================================ */

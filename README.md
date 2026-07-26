@@ -66,6 +66,11 @@ Aucune installation n'est nécessaire.
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
   la remédiation, réutilisées depuis les données du scénario.
+- **Vue diff avant/après correctif** : en phase de défense, `verify` et
+  `replay` affichent un panneau repliable qui compare ligne à ligne le
+  fichier de configuration d'origine (vulnérable) à son état actuel —
+  pour voir concrètement ce que le correctif a changé, pas seulement
+  s'il a fonctionné.
 - **Mentor contextuel** : conseils socratiques par famille technique,
   jamais la commande exacte — pour s'entraîner à raisonner plutôt qu'à
   chercher un indice.
@@ -94,6 +99,8 @@ js/
   chains.js            Les scénarios chaînés multi-machines
   factsheets.js         Fiches techniques imprimables (référence réelle par
                         scénario : CVE, technique MITRE ATT&CK, incident)
+  diffview.js            Vue diff avant/après correctif (comparaison ligne
+                        à ligne des fichiers de configuration modifiés)
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
   progression.js         Scoring, classement, succès, faille du jour,
