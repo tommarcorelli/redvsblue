@@ -149,6 +149,15 @@
         <div class="learn-path" id="learn-path"></div>
         <div class="learn-intro">Chaque leçon décortique une vulnérabilité : le <b>concept</b>, l'<b>attaque</b> expliquée pas à pas, puis la <b>défense</b> qui la neutralise. Lisez la théorie ici, puis passez à la pratique dans les dossiers — sans blocage, dans l'ordre que vous voulez.</div>
         <div class="learn-grid" id="learn-grid"></div>
+
+        <details class="glossary-panel">
+          <summary class="glossary-summary">📖 Glossaire — les notions clés, à consulter à tout moment</summary>
+          <div class="filter-bar">
+            <input type="search" id="glossary-search" class="filter-search" placeholder="🔎 Rechercher un terme (SUID, JWT, Kerberoasting...)" autocomplete="off">
+          </div>
+          <div class="filter-count" id="glossary-count"></div>
+          <div class="glossary-list" id="glossary-list"></div>
+        </details>
       </section>
 
       <!-- ===== Onglet : Réseau ===== -->
@@ -431,6 +440,7 @@
 <script src="js/factsheets.js"></script>
 <script src="js/diffview.js"></script>
 <script src="js/autocomplete.js"></script>
+<script src="js/glossary.js"></script>
 <script src="js/network-map.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/ui.js"></script>

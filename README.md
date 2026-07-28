@@ -66,6 +66,9 @@ Aucune installation n'est nécessaire.
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
   la remédiation, réutilisées depuis les données du scénario.
+- **Glossaire pédagogique** : 47 termes transverses (SUID, JWT, Kerberoasting,
+  IAM, SSRF...) consultables et filtrables à tout moment depuis l'onglet
+  Apprendre, indépendamment de tout scénario précis.
 - **Autocomplétion Tab** dans le terminal : commandes et chemins de
   fichiers/dossiers, avec préfixe commun et liste des candidats au second Tab,
   comme un vrai shell.
@@ -108,6 +111,7 @@ js/
   diffview.js            Vue diff avant/après correctif (comparaison ligne
                         à ligne des fichiers de configuration modifiés)
   autocomplete.js         Autocomplétion Tab du terminal (commandes, chemins)
+  glossary.js             Glossaire pédagogique transverse (47 termes)
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
   progression.js         Scoring, classement, succès, faille du jour,

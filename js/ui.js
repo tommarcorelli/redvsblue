@@ -1006,6 +1006,7 @@ function renderLearnCatalog(){
     grid.appendChild(card);
   });
   renderLearnPath();
+  if(window.renderGlossary) renderGlossary();
 }
 window.renderLearnCatalog = renderLearnCatalog;
 

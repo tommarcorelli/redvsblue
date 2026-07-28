@@ -40,6 +40,13 @@ document.getElementById('dossier-filter-family').addEventListener('change', appl
 document.getElementById('dossier-filter-status').addEventListener('change', applyDossierFilters);
 document.getElementById('dossier-filter-reset').addEventListener('click', resetDossierFilters);
 
+/* ---------- v4.8 : recherche du glossaire ---------- */
+let glossarySearchDebounce = null;
+document.getElementById('glossary-search').addEventListener('input', ()=>{
+  clearTimeout(glossarySearchDebounce);
+  glossarySearchDebounce = setTimeout(renderGlossary, 120);
+});
+
 document.getElementById('btn-hint').addEventListener('click', ()=>{
   const hints = game.chain
     ? game.chain.stages[game.chainStage].hints
