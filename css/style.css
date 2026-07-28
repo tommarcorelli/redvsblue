@@ -234,10 +234,39 @@ button:focus-visible, .home-tab:focus-visible, input:focus-visible{
   background:linear-gradient(var(--red),var(--blue));box-shadow:0 0 10px rgba(34,211,238,.4);
 }
 
+/* --- v4.6 : barre de recherche/filtre des dossiers --- */
+.filter-bar{
+  display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;align-items:center;
+}
+.filter-search{
+  flex:1 1 240px;min-width:0;font-family:inherit;font-size:13px;color:var(--text);
+  background:var(--bg-panel);border:1px solid var(--line);border-radius:7px;padding:9px 12px;
+  transition:border-color .15s;
+}
+.filter-search:focus{outline:none;border-color:var(--blue);}
+.filter-search::placeholder{color:var(--text-dim);}
+.filter-select{
+  font-family:inherit;font-size:12px;color:var(--text);background:var(--bg-panel);
+  border:1px solid var(--line);border-radius:7px;padding:9px 10px;cursor:pointer;
+}
+.filter-select:focus{outline:none;border-color:var(--blue);}
+.filter-reset{
+  font-family:inherit;font-size:13px;color:var(--text-dim);background:var(--bg-panel);
+  border:1px solid var(--line);border-radius:7px;padding:8px 11px;cursor:pointer;
+  transition:color .15s, border-color .15s;
+}
+.filter-reset:hover{color:var(--red);border-color:var(--red);}
+.filter-count{font-size:11px;color:var(--text-dim);letter-spacing:.03em;margin:-4px 0 12px;}
+.filter-empty{
+  text-align:center;color:var(--text-dim);font-size:13px;padding:34px 10px;
+  border:1px dashed var(--line);border-radius:10px;
+}
+
 /* --- Dossiers (mission cards) --- */
 .mission-grid{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;width:100%;text-align:left;
 }
+.mission-grid[hidden]{display:none;}
 /* Relief commun des panneaux (décollent du fond) */
 .netmap-panel, .sandbox-panel, .report-panel, .leaderboard-panel, .mission-card, .achv-card{
   background:linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));

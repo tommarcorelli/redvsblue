@@ -118,7 +118,22 @@
       <!-- ===== Onglet : Dossiers ===== -->
       <section class="tab-panel" data-panel="dossiers">
         <h2 class="section-label">📁 Dossiers actifs</h2>
+        <div class="filter-bar" id="dossier-filter-bar">
+          <input type="search" id="dossier-search" class="filter-search" placeholder="🔎 Rechercher un dossier (titre, référence, CVE...)" autocomplete="off">
+          <select id="dossier-filter-family" class="filter-select">
+            <option value="all">Toutes les familles</option>
+          </select>
+          <select id="dossier-filter-status" class="filter-select">
+            <option value="all">Tous les statuts</option>
+            <option value="locked">Verrouillé</option>
+            <option value="progress">En cours</option>
+            <option value="secured">Sécurisé</option>
+          </select>
+          <button type="button" id="dossier-filter-reset" class="filter-reset" title="Réinitialiser les filtres">✕</button>
+        </div>
+        <div class="filter-count" id="dossier-filter-count"></div>
         <div class="mission-grid" id="home-mission-grid"></div>
+        <div class="filter-empty" id="dossier-filter-empty" hidden>Aucun dossier ne correspond à ces filtres.</div>
       </section>
 
       <!-- ===== Onglet : Chaînes (attaques multi-étapes) ===== -->

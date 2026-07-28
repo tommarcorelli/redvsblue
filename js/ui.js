@@ -32,24 +32,79 @@ function familyColorForScenario(id){
   return cluster ? cluster.color : 'transparent';
 }
 
-function renderHome(){
-  const total = SCENARIOS.length;
-  const done = SCENARIOS.filter(s=>progress[s.id].attack && progress[s.id].defense).length;
-  document.getElementById('home-progress-label').textContent = `${done} / ${total} systèmes sécurisés`;
-  document.getElementById('home-progress-fill').style.width = (done/total*100)+'%';
+/* ---------- v4.6 : recherche/filtre de l'onglet Dossiers ---------- */
+// État en mémoire seulement (pas de localStorage) : un filtre est une
+// préférence de session, pas une donnée de progression à conserver.
+const dossierFilters = { q:'', family:'all', status:'all' };
+let dossierFilterOptionsBuilt = false;
 
+function buildDossierFilterOptions(){
+  if(dossierFilterOptionsBuilt) return;
+  const sel = document.getElementById('dossier-filter-family');
+  if(!sel || typeof NETWORK_CLUSTERS === 'undefined') return;
+  NETWORK_CLUSTERS.forEach(cluster=>{
+    const opt = document.createElement('option');
+    opt.value = cluster.name;
+    opt.textContent = cluster.name;
+    sel.appendChild(opt);
+  });
+  dossierFilterOptionsBuilt = true;
+}
+
+function scenarioMatchesDossierFilters(s, statusClass){
+  if(dossierFilters.status !== 'all' && dossierFilters.status !== statusClass) return false;
+  if(dossierFilters.family !== 'all'){
+    const cluster = (typeof NETWORK_CLUSTERS !== 'undefined') ? NETWORK_CLUSTERS.find(c=>c.ids.includes(s.id)) : null;
+    if(!cluster || cluster.name !== dossierFilters.family) return false;
+  }
+  const q = dossierFilters.q.trim().toLowerCase();
+  if(q){
+    const ref = (typeof FACTSHEET_META !== 'undefined' && FACTSHEET_META[s.id]) ? FACTSHEET_META[s.id].ref : '';
+    const haystack = `${s.title} ${s.category} ${ref}`.toLowerCase();
+    if(!haystack.includes(q)) return false;
+  }
+  return true;
+}
+
+function applyDossierFilters(){
+  dossierFilters.q = (document.getElementById('dossier-search') || {}).value || '';
+  dossierFilters.family = (document.getElementById('dossier-filter-family') || {}).value || 'all';
+  dossierFilters.status = (document.getElementById('dossier-filter-status') || {}).value || 'all';
+  renderMissionGrid();
+}
+
+function resetDossierFilters(){
+  const searchEl = document.getElementById('dossier-search');
+  const famEl = document.getElementById('dossier-filter-family');
+  const statusEl = document.getElementById('dossier-filter-status');
+  if(searchEl) searchEl.value = '';
+  if(famEl) famEl.value = 'all';
+  if(statusEl) statusEl.value = 'all';
+  dossierFilters.q = ''; dossierFilters.family = 'all'; dossierFilters.status = 'all';
+  renderMissionGrid();
+}
+window.applyDossierFilters = applyDossierFilters;
+window.resetDossierFilters = resetDossierFilters;
+
+function renderMissionGrid(){
+  buildDossierFilterOptions();
   const grid = document.getElementById('home-mission-grid');
+  const emptyEl = document.getElementById('dossier-filter-empty');
+  const countEl = document.getElementById('dossier-filter-count');
   grid.innerHTML = '';
+  let shown = 0;
   SCENARIOS.forEach((s,i)=>{
     const unlocked = isScenarioUnlocked(i);
     const defUnlocked = isDefenseUnlocked(i);
     const p = progress[s.id];
     const statusClass = !unlocked ? 'locked' : (p.attack && p.defense) ? 'secured' : 'progress';
     const statusText = !unlocked ? 'Verrouillé' : (p.attack && p.defense) ? 'Sécurisé' : 'En cours';
+    if(!scenarioMatchesDossierFilters(s, statusClass)) return;
+    shown++;
     const card = document.createElement('div');
     card.className = 'mission-card ' + statusClass;
     card.style.setProperty('--fam-color', familyColorForScenario(s.id));
-    card.style.setProperty('--reveal-delay', (Math.min(i,20)*22)+'ms');
+    card.style.setProperty('--reveal-delay', (Math.min(shown-1,20)*22)+'ms');
     card.innerHTML = `
       <div class="mc-head">
         <span class="mc-num">Paire ${String(i+1).padStart(2,'0')} · ${s.category}</span>
@@ -66,6 +121,18 @@ function renderHome(){
     }
     grid.appendChild(card);
   });
+  if(countEl) countEl.textContent = `${shown} / ${SCENARIOS.length} dossiers affichés`;
+  if(emptyEl) emptyEl.hidden = shown !== 0;
+  grid.hidden = shown === 0;
+}
+
+function renderHome(){
+  const total = SCENARIOS.length;
+  const done = SCENARIOS.filter(s=>progress[s.id].attack && progress[s.id].defense).length;
+  document.getElementById('home-progress-label').textContent = `${done} / ${total} systèmes sécurisés`;
+  document.getElementById('home-progress-fill').style.width = (done/total*100)+'%';
+
+  renderMissionGrid();
 
   if(window.renderNetworkMap) renderNetworkMap();
   renderAchievements();

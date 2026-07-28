@@ -66,6 +66,9 @@ Aucune installation n'est nécessaire.
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
   la remédiation, réutilisées depuis les données du scénario.
+- **Recherche et filtres dans les dossiers** : un champ de recherche libre
+  (titre, catégorie, référence réelle) et des menus par famille technique et
+  par statut, pour retrouver en un instant un scénario donné parmi les 67.
 - **Vue diff avant/après correctif** : en phase de défense, `verify` et
   `replay` affichent un panneau repliable qui compare ligne à ligne le
   fichier de configuration d'origine (vulnérable) à son état actuel —

@@ -30,6 +30,16 @@ document.querySelectorAll('.home-tab').forEach(btn=>{
 });
 document.getElementById('home-nav-brand').addEventListener('click', ()=> switchHomeTab('accueil'));
 
+/* ---------- v4.6 : recherche/filtre des dossiers ---------- */
+let dossierSearchDebounce = null;
+document.getElementById('dossier-search').addEventListener('input', ()=>{
+  clearTimeout(dossierSearchDebounce);
+  dossierSearchDebounce = setTimeout(applyDossierFilters, 120);
+});
+document.getElementById('dossier-filter-family').addEventListener('change', applyDossierFilters);
+document.getElementById('dossier-filter-status').addEventListener('change', applyDossierFilters);
+document.getElementById('dossier-filter-reset').addEventListener('click', resetDossierFilters);
+
 document.getElementById('btn-hint').addEventListener('click', ()=>{
   const hints = game.chain
     ? game.chain.stages[game.chainStage].hints
