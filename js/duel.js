@@ -17,7 +17,7 @@ function completeDuelAttack(){
     title: currentScenario().title,
     flag: extractFlagFromLog()
   };
-  try{ window.parent.postMessage(payload, '*'); }catch(e){}
+  try{ window.parent.postMessage(payload, window.location.origin); }catch(e){}
   showModal({
     kind:'attack',
     title:'🚩 Cible compromise !',
@@ -38,7 +38,7 @@ function completeDuelDefense(){
     title: currentScenario().title,
     flag: null
   };
-  try{ window.parent.postMessage(payload, '*'); }catch(e){}
+  try{ window.parent.postMessage(payload, window.location.origin); }catch(e){}
   showModal({
     kind:'defense',
     title:'🛡️ Système durci !',
@@ -75,6 +75,7 @@ function completeDuelDefense(){
   showWaitOverlay();
 
   window.addEventListener('message', (e)=>{
+    if(e.origin !== window.location.origin) return;
     if(!e.data || e.data.type !== 'duel-start') return;
     const overlay = document.getElementById('duel-wait-overlay');
     if(overlay) overlay.remove();
@@ -85,6 +86,6 @@ function completeDuelDefense(){
   });
 
   window.addEventListener('load', ()=>{
-    try{ window.parent.postMessage({type:'duel-ready', side}, '*'); }catch(e){}
+    try{ window.parent.postMessage({type:'duel-ready', side}, window.location.origin); }catch(e){}
   });
 })();
