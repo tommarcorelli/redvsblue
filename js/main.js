@@ -141,18 +141,27 @@ termInput.addEventListener('keydown', (e)=>{
     const val = termInput.value;
     termInput.value = '';
     historyPointer = null;
+    resetTabState();
     runCommand(val);
   } else if(e.key === 'ArrowUp'){
     if(!game.history.length) return;
     e.preventDefault();
+    resetTabState();
     historyPointer = (historyPointer===null) ? game.history.length-1 : Math.max(0, historyPointer-1);
     termInput.value = game.history[historyPointer] || '';
   } else if(e.key === 'ArrowDown'){
     if(historyPointer===null) return;
     e.preventDefault();
+    resetTabState();
     historyPointer++;
     if(historyPointer >= game.history.length){ historyPointer = null; termInput.value = ''; }
     else { termInput.value = game.history[historyPointer]; }
+  } else if(e.key === 'Tab'){
+    // v4.7 : autocomplétion — commande (premier mot) ou chemin VFS (arguments)
+    e.preventDefault();
+    handleTabCompletion();
+  } else {
+    resetTabState();
   }
 });
 

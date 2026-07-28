@@ -368,7 +368,7 @@ function help(){
   print("  clear                  history            reset", 'out');
   print("  pipes : cmd | grep <motif> | wc -l | sort [-r] | uniq | head -n <N> | tail -n <N> | cut -d<sep> -f<N>", 'out');
   print("  redirections : cmd > fichier (écrase)   cmd >> fichier (ajoute)", 'out');
-  print("  variables : $HOME $PATH $USER — flèches ↑ ↓ pour naviguer dans l'historique", 'out');
+  print("  variables : $HOME $PATH $USER — flèches ↑ ↓ pour naviguer dans l'historique, Tab pour compléter", 'out');
   print("  selon le scénario : showmount, mount, dig axfr, ldapsearch, restart-service, docker, getcap/setcap, su, systemctl,", 'out');
   print("                      attendre-cron, pkexec, redis-cli, curl, aws, git-dump, mysql, ssh, kubectl, apt-get,", 'out');
   print("                      jwt-forge, whoami-shell, upgrade-log4j, python3, find, jenkins-groovy, pickle-forge,", 'out');

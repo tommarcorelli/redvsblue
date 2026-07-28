@@ -66,6 +66,9 @@ Aucune installation n'est nécessaire.
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
   la remédiation, réutilisées depuis les données du scénario.
+- **Autocomplétion Tab** dans le terminal : commandes et chemins de
+  fichiers/dossiers, avec préfixe commun et liste des candidats au second Tab,
+  comme un vrai shell.
 - **Recherche et filtres dans les dossiers** : un champ de recherche libre
   (titre, catégorie, référence réelle) et des menus par famille technique et
   par statut, pour retrouver en un instant un scénario donné parmi les 67.
@@ -104,6 +107,7 @@ js/
                         scénario : CVE, technique MITRE ATT&CK, incident)
   diffview.js            Vue diff avant/après correctif (comparaison ligne
                         à ligne des fichiers de configuration modifiés)
+  autocomplete.js         Autocomplétion Tab du terminal (commandes, chemins)
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
   progression.js         Scoring, classement, succès, faille du jour,
