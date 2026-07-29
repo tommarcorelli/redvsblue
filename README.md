@@ -66,6 +66,9 @@ Aucune installation n'est nécessaire.
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
   la remédiation, réutilisées depuis les données du scénario.
+- **Accessibilité clavier & ARIA** : modales avec piège de focus et fermeture
+  à l'Échap, cartes de leçon utilisables au clavier, onglet actif annoncé
+  aux lecteurs d'écran, terminal en région live.
 - **Glossaire pédagogique** : 47 termes transverses (SUID, JWT, Kerberoasting,
   IAM, SSRF...) consultables et filtrables à tout moment depuis l'onglet
   Apprendre, indépendamment de tout scénario précis.
@@ -112,6 +115,7 @@ js/
                         à ligne des fichiers de configuration modifiés)
   autocomplete.js         Autocomplétion Tab du terminal (commandes, chemins)
   glossary.js             Glossaire pédagogique transverse (47 termes)
+  a11y.js                 Accessibilité : piège de focus + Échap pour les modales
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
   progression.js         Scoring, classement, succès, faille du jour,

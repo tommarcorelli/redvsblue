@@ -47,8 +47,8 @@
         </svg>
         <span class="r">RED</span><span class="nav-vs">vs</span><span class="b">BLUE</span>
       </button>
-      <div class="home-nav-tabs" id="home-nav-tabs">
-        <button class="home-tab active" data-tab="accueil">🏠 Accueil</button>
+      <div class="home-nav-tabs" id="home-nav-tabs" aria-label="Sections de l'application">
+        <button class="home-tab active" data-tab="accueil" aria-current="true">🏠 Accueil</button>
         <span class="nav-divider" aria-hidden="true"></span>
         <button class="home-tab" data-tab="dossiers">📁 Dossiers</button>
         <button class="home-tab" data-tab="chaines">🔗 Chaînes</button>
@@ -391,10 +391,10 @@
           <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
           <span id="term-host">target-lab — terminal simulé</span>
         </div>
-        <div class="term-body" id="term-body"></div>
+        <div class="term-body" id="term-body" role="log" aria-live="polite" aria-label="Sortie du terminal"></div>
         <div class="term-input-row">
           <span class="prompt-label attack" id="prompt-label">bob@target:~$</span>
-          <input id="term-input" autocomplete="off" spellcheck="false" placeholder="tapez 'help' pour la liste des commandes"/>
+          <input id="term-input" autocomplete="off" spellcheck="false" placeholder="tapez 'help' pour la liste des commandes" aria-label="Ligne de commande du terminal"/>
         </div>
       </div>
     </div>
@@ -441,6 +441,7 @@
 <script src="js/diffview.js"></script>
 <script src="js/autocomplete.js"></script>
 <script src="js/glossary.js"></script>
+<script src="js/a11y.js"></script>
 <script src="js/network-map.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/ui.js"></script>

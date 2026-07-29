@@ -163,8 +163,9 @@ termInput.addEventListener('keydown', (e)=>{
     historyPointer++;
     if(historyPointer >= game.history.length){ historyPointer = null; termInput.value = ''; }
     else { termInput.value = game.history[historyPointer]; }
-  } else if(e.key === 'Tab'){
+  } else if(e.key === 'Tab' && !e.shiftKey){
     // v4.7 : autocomplétion — commande (premier mot) ou chemin VFS (arguments)
+    // v4.9 : Shift+Tab reste volontairement libre pour sortir du champ au clavier
     e.preventDefault();
     handleTabCompletion();
   } else {

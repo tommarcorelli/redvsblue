@@ -20,7 +20,11 @@ function goHome(){
 
 /* ---------- Onglets de l'écran d'accueil ---------- */
 function switchHomeTab(name){
-  document.querySelectorAll('.home-tab').forEach(b=> b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.home-tab').forEach(b=>{
+    const isActive = b.dataset.tab === name;
+    b.classList.toggle('active', isActive);
+    if(isActive) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.tab-panel').forEach(p=> p.classList.toggle('active', p.dataset.panel===name));
   const screen = document.getElementById('screen-home');
   if(screen) screen.scrollTo({top:0, behavior:'auto'});
@@ -997,12 +1001,18 @@ function renderLearnCatalog(){
     const isRead = read.includes(s.id);
     const card = document.createElement('div');
     card.className = 'learn-card' + (isRead ? ' read' : '');
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', `${isRead ? 'Relire' : 'Lire'} la leçon : ${s.title}`);
     card.innerHTML = `
       <div class="lc-num">Leçon ${String(i+1).padStart(2,'0')} · ${escapeHtml(s.category)}${isRead?' <span class="lc-read">✓ lu</span>':''}</div>
       <div class="lc-title">${escapeHtml(s.title)}</div>
       <div class="lc-teaser">${escapeHtml(teaser)}…</div>
       <div class="lc-open">${isRead ? 'Relire la leçon →' : 'Lire la leçon →'}</div>`;
     card.addEventListener('click', ()=> openLesson(i));
+    card.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openLesson(i); }
+    });
     grid.appendChild(card);
   });
   renderLearnPath();

@@ -219,7 +219,8 @@ button.big.ghost{background:transparent;border:1px solid var(--line);color:var(-
 button.big.ghost:hover{border-color:var(--gold);filter:brightness(1.15);}
 
 /* Focus clavier cohérent */
-button:focus-visible, .home-tab:focus-visible, input:focus-visible{
+button:focus-visible, .home-tab:focus-visible, input:focus-visible,
+.learn-card:focus-visible, [role="button"]:focus-visible{
   outline:2px solid var(--gold);outline-offset:2px;
 }
 
@@ -559,6 +560,7 @@ button.ghost.active{border-color:var(--gold);color:var(--gold);background:rgba(2
   60%{transform:translate(-2px,-2px);} 80%{transform:translate(2px,2px);}
 }
 .term-input-row{display:flex;align-items:center;padding:10px 14px;border-top:1px solid var(--line);background:#000;gap:8px;}
+.term-input-row:focus-within{box-shadow:inset 0 0 0 2px var(--gold);}
 .prompt-label{white-space:nowrap;font-size:13px;font-weight:600;}
 .prompt-label.attack{color:var(--red);}
 .prompt-label.defense{color:var(--blue);}
@@ -1179,7 +1181,9 @@ html[data-theme="contrast"] body{ background:var(--bg); }
 html[data-theme="contrast"] body::before{ display:none; }
 html[data-theme="contrast"] button:focus-visible,
 html[data-theme="contrast"] .home-tab:focus-visible,
-html[data-theme="contrast"] input:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+html[data-theme="contrast"] input:focus-visible,
+html[data-theme="contrast"] .learn-card:focus-visible,
+html[data-theme="contrast"] [role="button"]:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
 
 /* ============================================================
    v1.3 — Récap cinématique de session
