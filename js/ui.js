@@ -12,6 +12,14 @@ function showScreen(name){
 }
 
 function goHome(){
+  // Filet de sécurité : si l'on quitte l'écran de jeu pendant un examen en
+  // cours (lien logo / bouton Menu, plutôt que le bouton dédié "Abandonner
+  // l'examen"), on arrête proprement le chrono d'examen plutôt que de le
+  // laisser tourner en tâche de fond avec un `game.exam` obsolète — sinon
+  // relancer une mission normale depuis l'accueil serait à tort traité
+  // comme une étape d'examen par `checkAutoWin()`.
+  if(typeof examTickInterval !== 'undefined' && examTickInterval){ clearInterval(examTickInterval); examTickInterval = null; }
+  game.exam = null;
   renderHome();
   showScreen('home');
   switchHomeTab('accueil');
@@ -143,6 +151,7 @@ function renderHome(){
   renderLeaderboard();
   renderSandboxPanel();
   renderDailyPanel();
+  if(window.renderExamPanel) renderExamPanel();
   renderLearnCatalog();
   renderDashboard();
   renderChainsCatalog();
@@ -231,6 +240,7 @@ function renderChainSidebar(){
 
 function renderSidebar(){
   if(game.chain){ renderChainSidebar(); return; }
+  if(game.exam){ renderExamSidebar(); return; }
   if(game.sandbox){ renderSandboxSidebar(); return; }
   missionListEl.innerHTML = '';
   SCENARIOS.forEach((s, i)=>{
@@ -330,7 +340,7 @@ function renderObjective(){
   const guidedBtn = document.getElementById('btn-guided');
   const guidedPanel = document.getElementById('guided-panel');
   if(guidedBtn && guidedPanel){
-    if(game.sandbox){
+    if(game.sandbox || game.exam){
       guidedBtn.style.display = 'none';
       guidedPanel.style.display = 'none';
       guidedPanel.innerHTML = '';
@@ -359,7 +369,11 @@ function renderTopbar(){
     renderScoreHud();
     return;
   }
-  if(game.sandbox){
+  if(game.exam){
+    phasePill.textContent = `⏱️ EXAMEN — ${examSystemLabel().toUpperCase()}`;
+    phasePill.className = 'phase-pill exam';
+    progressTag.textContent = `Phase ${game.phase==='attack'?'attaque':'défense'} — ${game.exam.preset}`;
+  } else if(game.sandbox){
     phasePill.textContent = '🎲 BAC À SABLE';
     phasePill.className = 'phase-pill sandbox';
     const stats = loadSandboxStats();
@@ -726,10 +740,11 @@ function strugglingScenarios(limit){
 const SKILL_FAMILIES = [
   { name:'Privesc Linux', icon:'🐧', color:'var(--green)', ids:['suid-find','cron-writable','sudo-awk','ssh-key-exposed','capability-setuid-python','path-hijack-cron','passwd-world-writable','shadow-world-readable','sudo-ld-preload','systemd-unit-writable','tar-wildcard-injection','pwnkit-cve-2021-4034','capability-dac-read-search'] },
   { name:'Réseau & services', icon:'🌐', color:'var(--blue)', ids:['nfs-no-root-squash','dns-axfr','ldap-anonymous-bind','redis-unauthenticated','elasticsearch-unauthenticated','memcached-unauthenticated','smb-null-session','llmnr-nbtns-poisoning-hash-capture','ntlm-relay-smb-signing-disabled','snmp-default-community-string','rsync-anonymous-module-exposure'] },
-  { name:'Web & API', icon:'🕸️', color:'var(--red)', ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce','python-pickle-deserialization','ssti-jinja2-flask','idor-invoice-api','mass-assignment-signup','excessive-data-exposure-api','missing-rate-limit-bruteforce','graphql-introspection-privilege-leak','cors-reflected-origin-credentials'] },
+  { name:'Web & API', icon:'🕸️', color:'var(--red)', ids:['git-directory-exposed','jwt-alg-none-forgery','log4shell-jndi-rce','python-pickle-deserialization','ssti-jinja2-flask','idor-invoice-api','mass-assignment-signup','excessive-data-exposure-api','missing-rate-limit-bruteforce','graphql-introspection-privilege-leak','cors-reflected-origin-credentials','csrf-no-token-password-change','xxe-external-entity-file-disclosure'] },
   { name:'Cloud & IaC', icon:'☁️', color:'var(--gold)', ids:['aws-imds-ssrf','s3-bucket-public','terraform-state-exposed','jenkins-script-console-open','iam-role-overpermissive','secret-in-public-repo','oauth-token-overscope','github-actions-secret-leak','dependency-confusion-pip','terraform-unpinned-module-supply-chain','cloud-secretsmanager-public-resource-policy'] },
   { name:'Conteneurs', icon:'📦', color:'var(--purple)', ids:['docker-socket-writable','k8s-privileged-hostpath','docker-registry-unauthenticated','k8s-rbac-clusterrolebinding-overpermissive','docker-pid-host-ptrace-injection','k8s-missing-networkpolicy-lateral-movement','k8s-etcd-unauthenticated','docker-cgroup-release-agent-escape','k8s-secret-env-plaintext-exec-exposure','docker-api-tcp-unauthenticated'] },
-  { name:'Active Directory / Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation','ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin','ad-silver-ticket-forgery','ad-acl-genericall-privesc','ad-constrained-delegation-s4u2proxy-abuse','ad-gpp-cpassword-sysvol'] }
+  { name:'Active Directory / Windows', icon:'🪟', color:'#7cb3ff', ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation','ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin','ad-silver-ticket-forgery','ad-acl-genericall-privesc','ad-constrained-delegation-s4u2proxy-abuse','ad-gpp-cpassword-sysvol','ad-adcs-esc1-template-misuse','ad-zerologon-netlogon-cve-2020-1472'] },
+  { name:'Mobile & API embarquées', icon:'📱', color:'#ff9e7c', ids:['mobile-hardcoded-api-key-apk','mobile-missing-certificate-pinning','mobile-insecure-oauth-redirect-uri-hijack'] }
 ];
 
 function familyStat(fam){

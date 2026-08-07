@@ -404,6 +404,22 @@ const MENTOR_TIPS = {
       "Demandez-vous quel est le champ exact (booléen, liste de groupes, droit ACL) qui porte la sur-permission, plutôt que de modifier l'objet entier.",
       "Si le correctif touche une GPO ou une délégation, vérifiez bien que seul le groupe légitime (administrateurs du domaine) garde le droit concerné — pas qu'il soit simplement ajouté en plus du groupe trop large."
     ]
+  },
+  'Mobile & API embarquées': {
+    attack: [
+      "Un binaire mobile publié — APK, IPA — doit toujours être considéré comme entièrement lisible par l'attaquant, une fois décompilé. Qu'est-ce qui, dans ce scénario, aurait dû rester uniquement côté serveur ?",
+      "La confiance d'une application mobile envers son propre réseau ou son propre backend est-elle vérifiée activement (épinglage, portée précise d'une clé, correspondance exacte d'une redirection), ou seulement supposée ?",
+      "Distinguez ce qui fuit directement depuis le code de l'application (un secret codé en dur) de ce qui se produit seulement lors d'une interaction réseau (interception, redirection détournée). Laquelle est en jeu ici ?",
+      "Une fois un identifiant, une clé ou un jeton obtenu côté mobile, la question suivante est toujours : quelle portée exacte le backend lui accorde-t-il réellement, au-delà de ce que l'application prévoyait ?",
+      "Si l'énumération du code décompilé ne révèle rien directement exploitable, cherchez plutôt du côté de ce que l'application fait confiance sans vérifier au moment de la connexion réseau."
+    ],
+    defense: [
+      "Le correctif ne consiste presque jamais à retirer une fonctionnalité mobile légitime, mais à en restreindre strictement la portée ou la vérification.",
+      "Quelle valeur, une fois comparée précisément (empreinte de certificat, portée de clé, URL de redirection exacte) plutôt que simplement acceptée, referme la faille ?",
+      "Vérifiez avec `replay` que la même interaction, une fois le réglage corrigé, est désormais rejetée.",
+      "Si la faille vient d'un secret partagé entre deux usages (mobile public et accès interne), le correctif porte sur la séparation des portées, pas sur la rotation seule du secret — qui resterait aussi large qu'avant.",
+      "Si la faille vient d'une vérification réseau absente (certificat, redirection), assurez-vous que le correctif compare une valeur exacte et non un simple format ou une simple présence."
+    ]
   }
 };
 
@@ -456,7 +472,9 @@ const ACHIEVEMENTS = [
   {id:'scholar',         icon:'📚', title:'Studieux',                desc:`Lire la moitié des ${SCENARIOS.length} leçons du mode Apprendre.`},
   {id:'theorist',        icon:'🎓', title:'Théoricien',              desc:"Lire l'intégralité des leçons du mode Apprendre."},
   {id:'chain-master',    icon:'🔗', title:'Enchaîneur',              desc:"Terminer une chaîne d'attaque complète, du premier accès au root."},
-  {id:'sharpshooter',    icon:'🎯', title:'Tireur d\'élite',          desc:`Enchaîner ${ADAPTIVE_THRESHOLD} phases réussies sans le moindre indice.`}
+  {id:'sharpshooter',    icon:'🎯', title:'Tireur d\'élite',          desc:`Enchaîner ${ADAPTIVE_THRESHOLD} phases réussies sans le moindre indice.`},
+  {id:'exam-taker',      icon:'🎓', title:'Candidat',                desc:"Terminer une première session d'examen chronométré, dans les temps ou non."},
+  {id:'exam-ace',        icon:'🥇', title:'Major de promotion',      desc:"Traiter tous les systèmes d'une session d'examen (attaque + défense) avant l'expiration du temps."}
 ];
 
 const ACH_KEY = 'redvsblue_achievements_v1';
@@ -507,6 +525,11 @@ function checkAchievements(ctx){
   tryUnlock('chain-master', chainsDone >= 1);
 
   tryUnlock('sharpshooter', adaptiveStreak() >= ADAPTIVE_THRESHOLD);
+
+  if(ctx.exam){
+    tryUnlock('exam-taker', true);
+    tryUnlock('exam-ace', !ctx.examTimedOut && ctx.examFullyDone === ctx.examSystems);
+  }
 
   newly.forEach(id=>{
     const a = ACHIEVEMENTS.find(x=>x.id===id);

@@ -27,9 +27,24 @@ Aucune installation n'est nécessaire.
 - **En ligne** : servez le dossier tel quel depuis GitHub Pages, Netlify,
   Vercel ou tout hébergeur statique — il n'y a rien à builder.
 
+## ✅ Vérifier l'intégrité des scénarios
+
+Un script de test (Node pur, aucune dépendance) rejoue automatiquement
+les vérifications structurelles refaites à la main à chaque ajout de
+scénario : cohérence des ids entre `scenarios.js` et les fichiers de
+métadonnées, structure du système de fichiers simulé, invariant d'état
+initial (un scénario neuf n'est jamais déjà « corrigé »), et un solveur
+best-effort qui rejoue les commandes citées dans les indices d'attaque.
+
+```bash
+node test/validate-scenarios.js
+# ou, si npm est disponible :
+npm test
+```
+
 ## ✨ Fonctionnalités
 
-- **67 scénarios attaque/défense** couvrant 6 grandes familles techniques :
+- **74 scénarios attaque/défense** couvrant 7 grandes familles techniques :
   élévation de privilèges Linux, réseau & annuaires (dont Memcached,
   session nulle SMB, empoisonnement LLMNR/NBT-NS, relais NTLM faute
   de signature SMB, chaîne de communauté SNMP par défaut et module
@@ -41,11 +56,15 @@ Aucune installation n'est nécessaire.
   dépendances, chaîne d'approvisionnement Terraform non épinglée et
   politique de ressource cloud trop permissive), applications web (dont IDOR, mass assignment, exposition
   excessive de données, absence de limitation de débit côté API,
-  introspection GraphQL non protégée et CORS mal configuré), et
+  introspection GraphQL non protégée, CORS mal configuré, absence de
+  jeton CSRF et entité externe XML non désactivée),
   Active Directory / Windows (AS-REP Roasting, délégation Kerberos,
   DCSync, GPO, Kerberoasting, Pass-the-Hash, Silver Ticket, abus d'ACL
-  GenericAll, abus de délégation contrainte S4U2Proxy et mot de passe
-  GPP cpassword laissé dans SYSVOL).
+  GenericAll, abus de délégation contrainte S4U2Proxy, mot de passe
+  GPP cpassword laissé dans SYSVOL, modèle de certificat ADCS mal
+  configuré ESC1 et Zerologon), et mobile & API embarquées (clé API
+  codée en dur dans un APK décompilé, absence d'épinglage de
+  certificat et redirect_uri OAuth non validé).
 - **Scénarios chaînés** : mouvement latéral réel sur plusieurs machines
   (clé SSH oubliée → pivot interne → identifiants trouvés → pivot final).
 - **Bac à sable** : système et faille tirés au hasard, sans script guidé,
@@ -55,13 +74,17 @@ Aucune installation n'est nécessaire.
 - **Faille du jour** : un scénario identique pour tout le monde chaque jour
   (façon Wordle), avec série de jours consécutifs et classement du jour
   simulé localement.
+- **Mode Examen chronométré** : un lot de 5, 8 ou 12 systèmes tirés au
+  hasard à traiter entièrement (attaque *puis* défense) avant l'expiration
+  d'un temps global — façon certification blanche, avec historique local
+  des sessions passées.
 - **Mode duel** : deux joueurs en local, un terminal attaquant et un
   terminal défenseur synchronisés en simultané.
 - **Génération procédurale** et **éditeur de scénario** sans code, pour
   créer ses propres CTF.
 - **Mode Apprendre** : une leçon par scénario, pour comprendre la faille
   sans forcément la rejouer.
-- **Fiches techniques** : pour chacun des 67 scénarios, une fiche
+- **Fiches techniques** : pour chacun des 74 scénarios, une fiche
   imprimable/exportable en HTML autonome (bouton dédié sur l'écran de
   briefing) qui rattache la faille à une référence réelle — CVE, technique
   MITRE ATT&CK, outil ou incident documenté — avec la méthode d'attaque et
@@ -69,7 +92,7 @@ Aucune installation n'est nécessaire.
 - **Accessibilité clavier & ARIA** : modales avec piège de focus et fermeture
   à l'Échap, cartes de leçon utilisables au clavier, onglet actif annoncé
   aux lecteurs d'écran, terminal en région live.
-- **Glossaire pédagogique** : 47 termes transverses (SUID, JWT, Kerberoasting,
+- **Glossaire pédagogique** : 50 termes transverses (SUID, JWT, Kerberoasting,
   IAM, SSRF...) consultables et filtrables à tout moment depuis l'onglet
   Apprendre, indépendamment de tout scénario précis.
 - **Autocomplétion Tab** dans le terminal : commandes et chemins de
@@ -77,7 +100,7 @@ Aucune installation n'est nécessaire.
   comme un vrai shell.
 - **Recherche et filtres dans les dossiers** : un champ de recherche libre
   (titre, catégorie, référence réelle) et des menus par famille technique et
-  par statut, pour retrouver en un instant un scénario donné parmi les 67.
+  par statut, pour retrouver en un instant un scénario donné parmi les 74.
 - **Vue diff avant/après correctif** : en phase de défense, `verify` et
   `replay` affichent un panneau repliable qui compare ligne à ligne le
   fichier de configuration d'origine (vulnérable) à son état actuel —
@@ -107,17 +130,19 @@ duel.html            Page dédiée au mode duel (deux terminaux synchronisés)
 manifest.json / sw.js  PWA (installation + cache hors-ligne)
 css/style.css         Tout le style du projet
 js/
-  scenarios.js         Les 67 scénarios (vfs, règles d'exploit, correctifs)
+  scenarios.js         Les 74 scénarios (vfs, règles d'exploit, correctifs)
   chains.js            Les scénarios chaînés multi-machines
   factsheets.js         Fiches techniques imprimables (référence réelle par
                         scénario : CVE, technique MITRE ATT&CK, incident)
   diffview.js            Vue diff avant/après correctif (comparaison ligne
                         à ligne des fichiers de configuration modifiés)
   autocomplete.js         Autocomplétion Tab du terminal (commandes, chemins)
-  glossary.js             Glossaire pédagogique transverse (47 termes)
+  glossary.js             Glossaire pédagogique transverse (50 termes)
   a11y.js                 Accessibilité : piège de focus + Échap pour les modales
   engine.js             Cœur du jeu : terminal, système de fichiers simulé,
                         interpréteur de commandes, phases attaque/défense
+  exam.js                Mode Examen chronométré (formats, chrono global,
+                        historique local des sessions)
   progression.js         Scoring, classement, succès, faille du jour,
                         difficulté adaptative, mentor contextuel
   network-map.js         Topologie réseau interactive (SVG)
@@ -125,6 +150,10 @@ js/
   editor.js               Éditeur de scénario sans code
   duel.js / recap.js       Mode duel / récap cinématique exportable
   ui.js / main.js / hero-fx.js   Rendu d'écran, navigation, page d'accueil
+test/
+  validate-scenarios.js   Script de test Node (aucune dépendance) : cohérence
+                        des ids, structure du vfs simulé, invariant d'état
+                        initial, solveur best-effort à partir des indices
 ```
 
 ## 🛠️ Stack technique

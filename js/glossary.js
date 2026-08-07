@@ -1,7 +1,7 @@
 /* ===================================================================
    Glossaire pédagogique — RED vs BLUE (v4.8)
    ---------------------------------------------------------------
-   Dictionnaire transverse des notions rencontrées dans les 67
+   Dictionnaire transverse des notions rencontrées dans les 74
    scénarios (permissions Linux, Active Directory, cloud/IaC,
    conteneurs, réseau, applicatif web...), consultable indépendamment
    de tout scénario précis. Module autonome : simple liste statique +
@@ -56,7 +56,10 @@ const GLOSSARY = [
   { term:"Tar (injection par caractère générique)", def:"Une commande tar exécutée automatiquement (ex. via cron) sur un dossier où un attaquant peut déposer des fichiers peut être détournée en nommant ces fichiers comme de fausses options tar (--checkpoint-action=exec=...), exécutées à la place d'une simple archive." },
   { term:"Terraform state (fuite)", def:"Le fichier d'état de Terraform décrit l'infrastructure provisionnée et peut contenir, en clair, des secrets générés ou référencés pendant le déploiement (mots de passe, clés). Un accès non protégé à ce fichier expose ces secrets bien au-delà de l'infrastructure elle-même." },
   { term:"Unconstrained delegation", def:"Configuration Active Directory qui autorise un serveur à réutiliser librement, auprès de n'importe quel autre service, l'identité complète de tout utilisateur qui s'y authentifie — y compris celle d'un administrateur de domaine si celui-ci vient s'y connecter." },
-  { term:".git exposé (fuite de code source)", def:"Un dossier .git accessible publiquement sur un serveur web expose tout l'historique du dépôt, y compris des identifiants ou secrets qui auraient été supprimés du code actuel mais qui restent présents dans les anciens commits." }
+  { term:".git exposé (fuite de code source)", def:"Un dossier .git accessible publiquement sur un serveur web expose tout l'historique du dépôt, y compris des identifiants ou secrets qui auraient été supprimés du code actuel mais qui restent présents dans les anciens commits." },
+  { term:"Certificate pinning (épinglage de certificat)", def:"Mécanisme par lequel une application mobile vérifie que le certificat (ou la clé publique) présenté par le serveur correspond précisément à celui attendu, plutôt que de faire confiance à n'importe quelle autorité de certification du système. Son absence permet à un attaquant disposant d'une autorité de certification tierce d'intercepter le trafic HTTPS malgré le chiffrement." },
+  { term:"MASVS (OWASP Mobile Application Security Verification Standard)", def:"Référentiel de sécurité de référence pour les applications mobiles (iOS/Android), couvrant entre autres la gestion des identifiants, le stockage local, les communications réseau et la résistance à la rétro-ingénierie — l'équivalent, côté mobile, de ce que l'OWASP Top 10 est pour le web." },
+  { term:"redirect_uri (OAuth)", def:"Paramètre d'une requête d'autorisation OAuth 2.0 qui indique où renvoyer le jeton une fois l'utilisateur authentifié. S'il n'est pas comparé de façon exacte à une valeur enregistrée à l'avance pour l'application, un attaquant peut le remplacer par un domaine qu'il contrôle pour intercepter le jeton d'accès de la victime." }
 ].sort((a,b)=> a.term.localeCompare(b.term, 'fr'));
 
 function renderGlossary(){

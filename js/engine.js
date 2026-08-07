@@ -70,7 +70,9 @@ let game = {
   custom: false,         // v2.0 : mode scénario créé via l'éditeur (test en direct)
   customDone: false,
   customScenario: null,
-  mentorIndex: 0         // v2.2 : nombre de conseils du mentor déjà demandés sur cette phase
+  mentorIndex: 0,        // v2.2 : nombre de conseils du mentor déjà demandés sur cette phase
+  exam: null,             // v5.0 : session d'examen chronométré en cours, ou null hors examen
+  examPhaseDone: false     // v5.0 : garde-fou anti double-déclenchement, comme sandboxWon/dailyDone
 };
 
 /* Remet à zéro tous les indicateurs de "mode" (bac à sable, faille du jour,
@@ -82,6 +84,7 @@ function resetModeFlags(){
   game.duel = null;
   game.procedural = false;
   game.custom = false;
+  game.exam = null;
 }
 
 function currentScenario(){
@@ -125,6 +128,7 @@ function applyScenarioState(scn, phase){
   game.dailyDone = false;
   game.proceduralDone = false;
   game.customDone = false;
+  game.examPhaseDone = false;
   if(phase === 'attack'){
     game.user = scn.startUserAttack;
     game.cwd = scn.startCwdAttack;
@@ -329,6 +333,8 @@ function checkAutoWin(){
       if(!game.customDone){ game.customDone = true; completeCustomAttack(); }
     } else if(game.sandbox){
       if(!game.sandboxWon){ game.sandboxWon = true; completeSandboxAttack(); }
+    } else if(game.exam){
+      if(!game.examPhaseDone){ game.examPhaseDone = true; completeExamAttack(); }
     } else if(!progress[scn.id].attack){
       completeAttack();
     }
@@ -340,6 +346,8 @@ function checkAutoWin(){
       if(!game.proceduralDone){ game.proceduralDone = true; completeProceduralDefense(); }
     } else if(game.custom){
       if(!game.customDone){ game.customDone = true; completeCustomDefense(); }
+    } else if(game.exam){
+      if(!game.examPhaseDone){ game.examPhaseDone = true; completeExamDefense(); }
     } else {
       showDefenseReadyBanner();
     }

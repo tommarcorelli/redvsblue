@@ -30,12 +30,17 @@ const NETWORK_CLUSTERS = [
          'python-pickle-deserialization','ssti-jinja2-flask',
          'idor-invoice-api','mass-assignment-signup',
          'excessive-data-exposure-api','missing-rate-limit-bruteforce',
-         'graphql-introspection-privilege-leak','cors-reflected-origin-credentials'] },
+         'graphql-introspection-privilege-leak','cors-reflected-origin-credentials',
+         'csrf-no-token-password-change','xxe-external-entity-file-disclosure'] },
   { name:'Active Directory / Windows', color:'#7cb3ff',
     ids:['windows-unquoted-path','ad-asrep-roasting','ad-unconstrained-delegation',
          'ad-dcsync-abuse','ad-gpo-writable','ad-kerberoasting-spn','ad-pass-the-hash-local-admin',
          'ad-silver-ticket-forgery','ad-acl-genericall-privesc',
-         'ad-constrained-delegation-s4u2proxy-abuse','ad-gpp-cpassword-sysvol'] }
+         'ad-constrained-delegation-s4u2proxy-abuse','ad-gpp-cpassword-sysvol',
+         'ad-adcs-esc1-template-misuse','ad-zerologon-netlogon-cve-2020-1472'] },
+  { name:'Mobile & API embarquées', color:'#ff9e7c',
+    ids:['mobile-hardcoded-api-key-apk','mobile-missing-certificate-pinning',
+         'mobile-insecure-oauth-redirect-uri-hijack'] }
 ];
 
 function netmapNodeStatus(i){

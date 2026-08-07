@@ -59,6 +59,7 @@
         <button class="home-tab" data-tab="jour">🗓️ Faille du jour</button>
         <button class="home-tab" data-tab="genere">🧬 Généré</button>
         <button class="home-tab" data-tab="editeur">🛠️ Éditeur</button>
+        <button class="home-tab" data-tab="examen">⏱️ Examen</button>
         <span class="nav-divider" aria-hidden="true"></span>
         <button class="home-tab" data-tab="succes">🏆 Succès</button>
         <button class="home-tab" data-tab="bilan">📊 Bilan</button>
@@ -206,6 +207,21 @@
         <div class="sandbox-panel">
           <div class="sandbox-panel-desc">Un système inédit généré à la volée : faille tirée parmi plusieurs modèles (secret exposé par des permissions trop larges, binaire SUID oublié…), avec entreprise, comptes, chemins et drapeau randomisés à chaque partie. N'affecte pas la progression du parcours.</div>
           <button class="big primary" id="btn-procedural">🧬 Générer un nouveau système</button>
+        </div>
+      </section>
+
+      <!-- ===== Onglet : Examen chronométré (v5.0) ===== -->
+      <section class="tab-panel" data-panel="examen">
+        <h2 class="section-label">⏱️ Examen chronométré</h2>
+        <div class="sandbox-panel">
+          <div class="sandbox-panel-desc">Un lot de systèmes tirés au hasard, à compromettre <b>puis</b> durcir un par un, avant l'expiration d'un temps global — façon certification blanche. N'affecte pas la progression du parcours ; le résultat de chaque session est conservé localement ci-dessous.</div>
+          <div class="exam-presets">
+            <button class="big primary" data-exam-preset="0">⏱️ Format rapide — 5 systèmes / 20 min</button>
+            <button class="big primary" data-exam-preset="1">⏱️ Format standard — 8 systèmes / 35 min</button>
+            <button class="big primary" data-exam-preset="2">⏱️ Format complet — 12 systèmes / 55 min</button>
+          </div>
+          <h3 class="section-label" style="font-size:13px;margin-top:8px;">Historique</h3>
+          <div id="exam-stats"></div>
         </div>
       </section>
 
@@ -357,6 +373,7 @@
       <span id="hud-timer">⏱ 00:00</span>
       <span id="hud-score">🧮 — pts</span>
       <span id="hud-adaptive" title="Phases enchaînées sans indice"></span>
+      <span id="hud-exam-timer" class="hud-exam-timer" title="Temps restant pour la session d'examen" hidden></span>
     </div>
     <div class="phase-pill attack" id="phase-pill">PHASE ATTAQUE</div>
     <button class="menu-btn" id="btn-sound-toggle" title="Activer/couper le son">🔇</button>
@@ -444,6 +461,7 @@
 <script src="js/a11y.js"></script>
 <script src="js/network-map.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/exam.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/hero-fx.js"></script>
 <script src="js/main.js"></script>

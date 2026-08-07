@@ -1,0 +1,9 @@
+{
+  "name": "redvsblue",
+  "version": "5.4.0",
+  "private": true,
+  "description": "RED vs BLUE — labo pédagogique attaque/défense 100% statique (aucune dépendance, aucun build).",
+  "scripts": {
+    "test": "node test/validate-scenarios.js"
+  }
+}

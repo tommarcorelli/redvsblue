@@ -100,6 +100,11 @@ document.getElementById('btn-sandbox').addEventListener('click', ()=> startSandb
 document.getElementById('btn-daily').addEventListener('click', ()=> startDailyChallenge());
 document.getElementById('btn-procedural').addEventListener('click', ()=> startProceduralChallenge());
 
+/* ---------- v5.0 : mode Examen chronométré ---------- */
+document.querySelectorAll('[data-exam-preset]').forEach(btn=>{
+  btn.addEventListener('click', ()=> startExam(parseInt(btn.dataset.examPreset, 10)));
+});
+
 /* ---------- v0.5 : rapport de session ---------- */
 document.getElementById('btn-session-report').addEventListener('click', downloadSessionReport);
 
